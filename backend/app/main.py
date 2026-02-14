@@ -1,8 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 from app.database.db import init_db
 from app.middleware.logging import logging_middleware
 from app.routes.analyze import router as analyze_router
+from app.core.settings import validate_required_keys
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Trust Issues API",
@@ -28,10 +32,21 @@ app.include_router(analyze_router)
 
 @app.on_event("startup")
 def startup():
+    """Initialize database and validate configuration."""
+    print("Initializing TrustIssues backend...")
+    
+    # Validate required API keys
+    try:
+        validate_required_keys()
+        print("✓ API keys configured correctly")
+    except ValueError as e:
+        print(f"⚠ Configuration warning: {str(e)}")
+        # Don't fail startup, but print warning
+    
+    # Initialize database
     print("Initializing database...")
     init_db()
-
-
+    print("✓ Backend ready!")
 @app.get("/")
 def health_check():
     return {"status": "backend running"}
