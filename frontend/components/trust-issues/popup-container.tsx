@@ -1,0 +1,93 @@
+"use client"
+
+import { useState } from "react"
+import { ScanButton } from "./scan-button"
+import { LoadingState } from "./loading-state"
+import { ScoreBar } from "./score-bar"
+import { CaseReport } from "./case-report"
+import { SourceList } from "./source-list"
+import { FindingsList } from "./findings-list"
+
+type Status = "idle" | "scanning" | "done"
+
+export function PopupContainer() {
+  const [status, setStatus] = useState<Status>("idle")
+
+  const handleScan = () => {
+    setStatus("scanning")
+    setTimeout(() => {
+      setStatus("done")
+    }, 6000)
+  }
+
+  return (
+    <div className="mx-auto flex min-h-screen w-full max-w-[360px] flex-col bg-background">
+      {/* Header */}
+      <header className="flex flex-col gap-0.5 px-4 pb-3 pt-5">
+        <h1 className="text-sm font-bold uppercase tracking-[0.3em] text-foreground">
+          Trust Issues
+        </h1>
+        <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+          Web Content Investigation Tool
+        </p>
+        <div className="mt-3 h-px w-full bg-border" />
+      </header>
+
+      {/* Main Content */}
+      <main className="flex flex-1 flex-col gap-5 px-4 py-3">
+        {/* Scan Button / Loading */}
+        {status === "idle" && <ScanButton onClick={handleScan} />}
+        {status === "scanning" && <LoadingState />}
+
+        {/* Results */}
+        {status === "done" && (
+          <div className="flex flex-col gap-5">
+            {/* Score Bars */}
+            <div className="flex flex-col gap-4 rounded-sm border border-border bg-card p-3">
+              <ScoreBar
+                label="AI-Generated Content Likelihood"
+                value={78}
+                delay={200}
+              />
+              <ScoreBar
+                label="Credibility Score"
+                value={42}
+                delay={400}
+              />
+              <ScoreBar
+                label="Manipulation Risk"
+                value={65}
+                delay={600}
+              />
+            </div>
+
+            {/* Case Report */}
+            <CaseReport />
+
+            {/* Sources */}
+            <SourceList />
+
+            {/* Findings */}
+            <FindingsList />
+
+            {/* Rescan */}
+            <button
+              onClick={() => setStatus("idle")}
+              className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {"[ Run New Scan ]"}
+            </button>
+          </div>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="px-4 pb-4 pt-3">
+        <div className="h-px w-full bg-border" />
+        <p className="mt-3 text-center text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
+          {"Trust Issues \u2014 Siren\u2019s Call Track"}
+        </p>
+      </footer>
+    </div>
+  )
+}
