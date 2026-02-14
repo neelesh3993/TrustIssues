@@ -27,9 +27,16 @@ export function useAnalysis(): UseAnalysisReturn {
     setError(null)
 
     try {
+      // Ensure Chrome extension APIs are available
+      if (typeof chrome === 'undefined' || !chrome.tabs || !chrome.tabs.query) {
+        throw new Error(
+          'Chrome extension APIs unavailable. Load this app as a browser extension (see QUICKSTART.md) or run the extension dev build.'
+        )
+      }
+
       // Get current tab
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-      if (!tab.id) throw new Error('No active tab found')
+      const [tab] = (await chrome.tabs.query({ active: true, currentWindow: true })) as any[]
+      if (!tab || !tab.id) throw new Error('No active tab found')
 
       // Request page content from content script
       const pageContent = await chrome.tabs.sendMessage(tab.id, {
@@ -73,12 +80,28 @@ export function useAnalysis(): UseAnalysisReturn {
   }, [])
 
   const cancel = useCallback(() => {
-    chrome.runtime.sendMessage({
-      type: 'CANCEL_ANALYSIS',
-      payload: { tabId: chrome.runtime.id },
-    })
-    setStatus('idle')
-    setError(null)
+    ;(async () => {
+      try {
+        if (typeof chrome === 'undefined' || !chrome.tabs || !chrome.tabs.query) {
+          // Nothing to cancel in non-extension environment
+          setStatus('idle')
+          setError(null)
+          return
+        }
+
+        const [tab] = (await chrome.tabs.query({ active: true, currentWindow: true })) as any[]
+        const tabId = tab?.id
+        chrome.runtime.sendMessage({
+          type: 'CANCEL_ANALYSIS',
+          payload: { tabId },
+        })
+      } catch {
+        // Ignore cancellation errors
+      } finally {
+        setStatus('idle')
+        setError(null)
+      }
+    })()
   }, [])
 
   const reset = useCallback(() => {

@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
-    "dev:extension": "tsc --noEmit && tsc -p tsconfig.extension.json --watch",
+    "dev:extension": "vite build --watch",
     "build": "next build && npm run build:extension",
-    "build:extension": "tsc -p tsconfig.extension.json",
+    "build:extension": "vite build",
     "build:all": "npm run build && npm run build:extension",
     "start": "next start",
     "lint": "next lint",
@@ -71,7 +71,9 @@
     "@types/react-dom": "19.2.3",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "vite": "^5.2.0",
+    "@vitejs/plugin-react": "^4.0.0"
   },
   "pnpm": {
     "overrides": {
