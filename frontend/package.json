@@ -6,7 +6,7 @@
     "dev": "next dev --turbo",
     "dev:extension": "vite build --watch",
     "build": "next build && npm run build:extension",
-    "build:extension": "vite build",
+    "build:extension": "vite build && node scripts/fix-popup-css.js",
     "build:all": "npm run build && npm run build:extension",
     "start": "next start",
     "lint": "next lint",
