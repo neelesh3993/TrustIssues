@@ -5,7 +5,7 @@
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { PopupApp } from '../components/popup'
+import { PopupApp } from './components/popup'
 import '../app/globals.css'
 
 // Find or create root element
