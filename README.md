@@ -250,17 +250,113 @@ screenshield/
 
 ## Setup Instructions
 
-### Backend
+### Prerequisites
 
-1. Navigate to backend folder
-2. Install dependencies
-3. Run FastAPI server
+- Python 3.8+
+- Node.js 16+
+- Active internet connection (for API calls)
 
-### Extension
+### Backend API Setup
 
-1. Build React frontend
-2. Load extension in Chrome developer mode
-3. Connect to backend API endpoint
+#### 1. Get Required API Keys
+
+You'll need two API keys for the backend to function:
+
+**A) Google Gemini API Key** (free with Google account)
+- Go to: https://makersuite.google.com/app/apikey
+- Click "Create API Key" 
+- Copy the key to a safe place
+
+**B) NewsAPI Key** (free tier available)
+- Go to: https://newsapi.org/
+- Sign up for a free account
+- Copy your API key from the dashboard
+
+#### 2. Configure Environment Variables
+
+Navigate to the `backend/` directory and create a `.env` file:
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+Edit `.env` and add your API keys:
+
+```
+GEMINI_API_KEY=your_gemini_key_here
+NEWS_API_KEY=your_newsapi_key_here
+```
+
+**Alternative: Set as environment variables (Windows PowerShell)**
+
+```powershell
+$env:GEMINI_API_KEY='your_gemini_key_here'
+$env:NEWS_API_KEY='your_newsapi_key_here'
+```
+
+**Alternative: Set as environment variables (Linux/macOS)**
+
+```bash
+export GEMINI_API_KEY='your_gemini_key_here'
+export NEWS_API_KEY='your_newsapi_key_here'
+```
+
+#### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+#### 4. Run the Backend Server
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+The API will be available at: `http://localhost:8000`
+
+**Health Check:**
+```bash
+curl http://localhost:8000/health
+```
+
+### Extension Setup
+
+1. Navigate to frontend folder
+2. Install dependencies: `npm install`
+3. Build extension: `npm run build`
+4. Load in Chrome:
+   - Open `chrome://extensions/`
+   - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select the `frontend` directory
+
+### Testing the Integration
+
+1. Ensure backend is running on port 8000
+2. Ensure extension is loaded in Chrome
+3. Navigate to any webpage
+4. Highlight some text (minimum 50 characters)
+5. Click extension icon and click "Scan Text"
+6. View credibility analysis results
+
+### Troubleshooting
+
+**Error: "MISSING REQUIRED API KEYS"**
+- Ensure you've set `GEMINI_API_KEY` and `NEWS_API_KEY`
+- Check `.env` file for syntax errors
+- Try setting as environment variables directly
+
+**Error: "API Rate Limit Exceeded"**
+- NewsAPI has rate limits on free tier (~100 requests/day)
+- Wait a few moments and retry
+- Consider upgrading to a paid NewsAPI plan
+
+**Error: "Invalid API Key"**
+- Verify keys are correct in `.env` file
+- Check that keys haven't expired
+- Regenerate keys from provider dashboards
 
 ---
 
