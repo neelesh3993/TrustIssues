@@ -16,7 +16,7 @@
     "http://127.0.0.1/*"
   ],
   "background": {
-    "service_worker": "service-worker.js",
+    "service_worker": "src/background.js",
     "type": "module"
   },
   "action": {
@@ -29,7 +29,7 @@
         "<all_urls>"
       ],
       "js": [
-        "content-script.js"
+        "src/content.js"
       ],
       "all_frames": true,
       "run_at": "document_end"
@@ -43,7 +43,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "popup.html"
+        "popup.html",
+        "src/*"
       ],
       "matches": [
         "<all_urls>"

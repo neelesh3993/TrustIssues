@@ -41,9 +41,10 @@ python -m uvicorn app.main:app --reload --port 8000
 cd TrustIssues/frontend
 
 # Install dependencies (first time only)
+# Ensure you install new devDeps (Vite + plugin) after package.json was updated
 npm install
 
-# Build extension files
+# Build extension files (Vite bundles popup/background/content into public/src)
 npm run build:extension
 ```
 
