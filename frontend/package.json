@@ -1,12 +1,17 @@
 {
-  "name": "my-project",
-  "version": "0.1.0",
+  "name": "trust-issues-extension",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
-    "build": "next build",
+    "dev:extension": "tsc --noEmit && tsc -p tsconfig.extension.json --watch",
+    "build": "next build && npm run build:extension",
+    "build:extension": "tsc -p tsconfig.extension.json",
+    "build:all": "npm run build && npm run build:extension",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "extension:pack": "npm run build:extension && mkdir -p dist-extension && cp -r public/* dist-extension/ && cp src/background/service-worker.js src/content/content-script.js dist-extension/",
+    "extension:test": "npm run build:extension && echo 'Extension built successfully'"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

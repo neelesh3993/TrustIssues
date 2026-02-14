@@ -1,23 +1,25 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect } from "react"
+import { useAnalysis } from "@/src/hooks/useAnalysis"
 import { ScanButton } from "./scan-button"
 import { LoadingState } from "./loading-state"
 import { ScoreBar } from "./score-bar"
 import { CaseReport } from "./case-report"
 import { SourceList } from "./source-list"
 import { FindingsList } from "./findings-list"
-
-type Status = "idle" | "scanning" | "done"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle } from "lucide-react"
 
 export function PopupContainer() {
-  const [status, setStatus] = useState<Status>("idle")
+  const { status, data, error, analyze, reset } = useAnalysis()
 
-  const handleScan = () => {
-    setStatus("scanning")
-    setTimeout(() => {
-      setStatus("done")
-    }, 6000)
+  const handleScan = async () => {
+    await analyze()
+  }
+
+  const handleReset = () => {
+    reset()
   }
 
   return (
@@ -35,44 +37,61 @@ export function PopupContainer() {
 
       {/* Main Content */}
       <main className="flex flex-1 flex-col gap-5 px-4 py-3">
+        {/* Error Alert */}
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
         {/* Scan Button / Loading */}
         {status === "idle" && <ScanButton onClick={handleScan} />}
-        {status === "scanning" && <LoadingState />}
+        {status === "analyzing" && <LoadingState />}
 
         {/* Results */}
-        {status === "done" && (
+        {status === "done" && data && (
           <div className="flex flex-col gap-5">
             {/* Score Bars */}
             <div className="flex flex-col gap-4 rounded-sm border border-border bg-card p-3">
               <ScoreBar
                 label="AI-Generated Content Likelihood"
-                value={78}
+                value={Math.round(data.aiGenerationLikelihood)}
                 delay={200}
               />
               <ScoreBar
                 label="Credibility Score"
-                value={42}
+                value={Math.round(data.credibilityScore)}
                 delay={400}
               />
               <ScoreBar
                 label="Manipulation Risk"
-                value={65}
+                value={Math.round(data.manipulationRisk)}
                 delay={600}
               />
             </div>
 
             {/* Case Report */}
-            <CaseReport />
+            <div className="flex flex-col gap-2">
+              <h3 className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+                Case Report
+              </h3>
+              <div className="rounded-sm border border-border bg-muted/50 p-3">
+                <p className="text-[11px] leading-relaxed text-secondary-foreground">
+                  {data.report}
+                </p>
+              </div>
+            </div>
 
             {/* Sources */}
-            <SourceList />
+            <SourceList sources={data.sources} />
 
             {/* Findings */}
-            <FindingsList />
+            <FindingsList findings={data.findings} />
 
             {/* Rescan */}
             <button
-              onClick={() => setStatus("idle")}
+              onClick={handleReset}
               className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"
             >
               {"[ Run New Scan ]"}
