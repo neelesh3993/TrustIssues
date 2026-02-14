@@ -39,9 +39,36 @@ export function useAnalysis(): UseAnalysisReturn {
       if (!tab || !tab.id) throw new Error('No active tab found')
 
       // Request page content from content script
-      const pageContent = await chrome.tabs.sendMessage(tab.id, {
-        type: 'REQUEST_PAGE_CONTENT',
-      })
+      let pageContent: any
+      try {
+        pageContent = await chrome.tabs.sendMessage(tab.id, {
+          type: 'REQUEST_PAGE_CONTENT',
+        })
+      } catch (sendErr: any) {
+        // If the content script isn't present, try injecting it then retry
+        const msg = String(sendErr?.message || sendErr)
+        if (msg.includes('Receiving end does not exist') || msg.includes('Could not establish connection')) {
+          try {
+            // Inject content script into the page (MV3)
+            if (chrome.scripting && chrome.scripting.executeScript) {
+              await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['src/content.js'],
+              })
+              // Retry sendMessage
+              pageContent = await chrome.tabs.sendMessage(tab.id, {
+                type: 'REQUEST_PAGE_CONTENT',
+              })
+            } else {
+              throw new Error('Content script missing and chrome.scripting API unavailable')
+            }
+          } catch (injectErr: any) {
+            throw new Error('Failed to inject content script: ' + (injectErr?.message || injectErr))
+          }
+        } else {
+          throw sendErr
+        }
+      }
 
       // Check cache first
       const cached = await chrome.storage.local.get(`analysis_${pageContent.url}`)
