@@ -6,6 +6,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { AnalysisResponse } from '../services/api'
 
+interface CachedAnalysis {
+  result: AnalysisResponse
+}
+
 type AnalysisStatus = 'idle' | 'analyzing' | 'done' | 'error'
 
 interface UseAnalysisReturn {
@@ -110,10 +114,12 @@ export function useAnalysis(): UseAnalysisReturn {
 
       // Check cache first
       console.log('💾 [Popup] Checking cache...')
-      const cached = await chrome.storage.local.get(`analysis_${pageContent.url}`)
-      if (cached[`analysis_${pageContent.url}`]) {
-        console.log('✓ [Popup] Using cached result')
-        setData(cached[`analysis_${pageContent.url}`].result)
+      const cacheKey = `analysis_${pageContent.url}`
+
+      const cached = await chrome.storage.local.get(cacheKey) as Record<string, CachedAnalysis>
+
+      if (cached[cacheKey]) {
+        setData(cached[cacheKey].result)
         setStatus('done')
         return
       }
@@ -126,22 +132,25 @@ export function useAnalysis(): UseAnalysisReturn {
       console.log('   Title:', pageContent.title)
 
       // Set up timeout BEFORE sending message
-      console.log('⏳ [Popup] Waiting for response (with 30s timeout)...')
+      console.log('⏳ [Popup] Waiting for response (with 120s timeout)...')
       isWaitingRef.current = true
       
       timeoutRef.current = setTimeout(() => {
         if (isWaitingRef.current) {
-          console.error('⏰ [Popup] Timeout: No response after 30 seconds')
+          console.error('⏰ [Popup] Timeout: No response after 120 seconds')
           setError('Analysis timeout. Service worker did not respond.')
           setStatus('error')
           isWaitingRef.current = false
         }
-      }, 30000)
+      }, 120000)
 
       // Send message with callback
       chrome.runtime.sendMessage({
         type: 'ANALYZE_PAGE',
-        payload: pageContent,
+        payload: {
+          ...pageContent,
+          tabId: tab.id,
+        },
       }, (response: any) => {
         console.log('📥 [Popup] Service worker responded via callback:', response)
         
@@ -167,6 +176,32 @@ export function useAnalysis(): UseAnalysisReturn {
           } else if (response.type === 'ANALYSIS_ERROR') {
             console.error('❌ [Popup] Analysis error:', response.payload.error)
             setError(response.payload.error)
+            setStatus('error')
+          } else if (response.status === 'error') {
+            const errorMessage = response.error || 'Service worker returned an error'
+            console.error('❌ [Popup] Analysis error:', errorMessage)
+            setError(errorMessage)
+            setStatus('error')
+          } else if (response.status === 'complete') {
+            // Backward compatibility with older worker response shape.
+            if (response.cached) {
+              ;(async () => {
+                const cacheKey = `analysis_${pageContent.url}`
+                const cached = await chrome.storage.local.get(cacheKey) as Record<string, CachedAnalysis>
+                if (cached[cacheKey]?.result) {
+                  setData(cached[cacheKey].result)
+                  setStatus('done')
+                } else {
+                  setError('Analysis completed but cached result was not found')
+                  setStatus('error')
+                }
+              })()
+            } else {
+              setError('Service worker returned an incomplete response')
+              setStatus('error')
+            }
+          } else {
+            setError('Unexpected response from service worker')
             setStatus('error')
           }
         } else {

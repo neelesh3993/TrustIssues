@@ -15,6 +15,11 @@
 
 import { analyzePageContent, checkBackendHealth } from '../services/api'
 
+interface CachedAnalysisEntry {
+  result: any
+  timestamp: number
+}
+
 // ====================
 // State Management
 // ====================
@@ -38,7 +43,7 @@ const HEALTH_CHECK_INTERVAL = 60000 // Check every minute
  * Main message listener
  * Routes incoming messages to appropriate handlers
  */
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
   console.debug('[Service Worker] Received message:', message.type)
   console.debug('[Service Worker] Message from:', sender.tab?.url || sender.url || 'unknown')
 
@@ -83,19 +88,25 @@ async function handleAnalyzeRequest(
   sendResponse: (response: any) => void
 ) {
   const { url, content, title, images } = message.payload
-  const tabId = sender.tab?.id
+  const tabId = sender.tab?.id ?? message.payload?.tabId
 
   // Validate input
   if (!content || content.trim().length < 50) {
     const error = 'Content too short. Please select at least 50 characters.'
     console.warn('[Service Worker] Validation error:', error)
-    sendResponse({ status: 'error', error })
+    sendResponse({
+      type: 'ANALYSIS_ERROR',
+      payload: { error, url },
+    })
     return
   }
 
   if (!tabId) {
     console.warn('[Service Worker] No tab ID found')
-    sendResponse({ status: 'error', error: 'Could not identify active tab' })
+    sendResponse({
+      type: 'ANALYSIS_ERROR',
+      payload: { error: 'Could not identify active tab', url },
+    })
     return
   }
 
@@ -121,7 +132,12 @@ async function handleAnalyzeRequest(
     })
 
     // Check if we have a cached result
-    const cached = await chrome.storage.local.get(`analysis_${url}`)
+    const cacheKey = `analysis_${url}`
+
+    const cached = await chrome.storage.local.get(cacheKey) as Record<
+      string,
+      CachedAnalysisEntry
+    >
     if (cached[`analysis_${url}`]) {
       const cacheAge = Date.now() - cached[`analysis_${url}`].timestamp
       // Use cache if less than 1 hour old
@@ -132,7 +148,10 @@ async function handleAnalyzeRequest(
           payload: { result: cached[`analysis_${url}`].result, cached: true },
         })
         activeRequests.delete(tabId)
-        sendResponse({ status: 'complete', cached: true })
+        sendResponse({
+          type: 'ANALYSIS_COMPLETE',
+          payload: { result: cached[`analysis_${url}`].result, cached: true },
+        })
         return
       }
     }
@@ -223,7 +242,12 @@ async function handleGetCachedAnalysis(
   sendResponse: (response: any) => void
 ) {
   const { url } = message.payload
-  const cached = await chrome.storage.local.get(`analysis_${url}`)
+  const cacheKey = `analysis_${url}`
+
+  const cached = await chrome.storage.local.get(cacheKey) as Record<
+    string,
+    CachedAnalysisEntry
+  >
 
   if (cached[`analysis_${url}`]) {
     sendResponse({ found: true, data: cached[`analysis_${url}`].result })

@@ -53,8 +53,9 @@ def verify_claims(claims: List[str]) -> List[Dict]:
     
     settings = get_settings()
     verification_results = []
+    claims_to_verify = claims[: settings.max_claims]
     
-    for claim in claims:
+    for claim in claims_to_verify:
         result = _verify_single_claim(claim)
         verification_results.append(result)
     
@@ -82,7 +83,15 @@ def _verify_single_claim(claim: str) -> Dict:
     logger.debug(f"Retrieving evidence for claim: {claim}")
     
     sources = search_news_with_fallback(claim)
-    
+    if not sources:
+        logger.debug(f"No evidence sources found for claim: {claim}")
+        return {
+            "claim": claim,
+            "status": "uncertain",
+            "rationale": "No supporting evidence found from reliable news sources.",
+            "sources": [],
+        }
+
     # Prepare source snippets for Gemini
     source_text = ""
     if sources:
