@@ -11,25 +11,176 @@
  */
 
 /**
+ * Check if current frame is an ad or tracking iframe
+ * Returns true if this is NOT a legitimate content frame
+ */
+function isAdFrame(): boolean {
+  const url = window.location.href
+  const hostname = window.location.hostname
+
+  // List of known ad/tracking domains to skip
+  const adDomains = [
+    'doubleclick.net',
+    'googleadservices.com',
+    'pagead',
+    'ads.',
+    'adserver',
+    'adservice',
+    'analytics',
+    'tracking',
+    'facebook.com/tr',
+    'twitter.com/i/',
+    'pubmatic',
+    'openx',
+    'criteo',
+    'appnexus',
+    'amazon-adsystem',
+    'scorecardresearch',
+    'quantserve',
+    'chartbeat',
+    'outbrain',
+    'taboola',
+    'sharethis',
+    'addthis',
+    'js/showad',
+    'pixeltrack',
+    'beacon',
+    'dpm.demdex'
+  ]
+
+  // Check if URL or hostname matches ad patterns
+  for (const adDomain of adDomains) {
+    if (url.toLowerCase().includes(adDomain) || hostname.toLowerCase().includes(adDomain)) {
+      console.debug(`[Content Script] 🚫 Detected ad frame: ${hostname}`)
+      return true
+    }
+  }
+
+  // Check if page has no visible content (typical of ad iframes)
+  if (document.body.innerText.length < 10 && url !== window.top?.location.href) {
+    console.debug(`[Content Script] 🚫 Detected empty iframe (likely ad)`)
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Check if we are in the main frame (not an iframe)
+ */
+function isMainFrame(): boolean {
+  try {
+    return window.self === window.top
+  } catch (e) {
+    // Cross-origin, assume not main frame
+    return false
+  }
+}
+
+/**
  * Extract plain text content from page
  * Removes scripts, styles, and cleans up whitespace
+ * Includes fallback extraction methods if primary fails
  */
 function extractPageText(): string {
-  // Clone the document to avoid modifying the actual page
-  const clone = document.documentElement.cloneNode(true) as HTMLElement
+  console.debug('[Content Script] Starting text extraction...')
 
-  // Remove script, style, and other non-content elements
-  const elementsToRemove = clone.querySelectorAll(
-    'script, style, meta, noscript, svg, iframe, [style*="display:none"]'
-  )
-  elementsToRemove.forEach((element) => element.remove())
+  let text = ''
 
-  // Get text content and clean up whitespace
-  let text = clone.innerText
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .join('\n')
+  // Method 1: Try to find main article/content area (most reliable)
+  console.debug('[Content Script] Attempting article-specific extraction...')
+  const articleSelectors = [
+    'article',
+    '[role="main"]',
+    'main',
+    '.article-content',
+    '.post-content',
+    '.entry-content',
+    '.content',
+    '.page-content',
+    '[class*="article"]',
+    '[class*="content"]'
+  ]
+
+  for (const selector of articleSelectors) {
+    const element = document.querySelector(selector)
+    if (element) {
+      const extracted = element.innerText
+        ?.split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .join('\n') || ''
+
+      if (extracted.length > text.length) {
+        text = extracted
+        console.debug(`[Content Script] Found content via selector "${selector}": ${text.length} chars`)
+      }
+    }
+  }
+
+  // Fallback Method 2: Clone and extract
+  if (text.length < 100) {
+    console.debug('[Content Script] Article selector failed, trying clone method...')
+    const clone = document.documentElement.cloneNode(true) as HTMLElement
+
+    // Remove script, style, and other non-content elements
+    const elementsToRemove = clone.querySelectorAll(
+      'script, style, meta, noscript, svg, iframe, [style*="display:none"], nav, header, footer, .ad, .advertisement'
+    )
+    elementsToRemove.forEach((element) => element.remove())
+
+    const cloneText = clone.innerText
+      ?.split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join('\n') || ''
+
+    console.debug(`[Content Script] Clone method: ${cloneText.length} chars`)
+
+    if (cloneText.length > text.length) {
+      text = cloneText
+    }
+  }
+
+  // Fallback Method 3: Direct document.body.innerText
+  if (text.length < 100) {
+    console.debug('[Content Script] Still <100 chars, trying body.innerText...')
+    const bodyText = document.body.innerText
+      ?.split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join('\n') || ''
+
+    console.debug(`[Content Script] Body method: ${bodyText.length} chars`)
+
+    if (bodyText.length > text.length) {
+      text = bodyText
+    }
+  }
+
+  // Fallback Method 4: textContent (more raw, less formatted)
+  if (text.length < 100) {
+    console.debug('[Content Script] Still <100 chars, trying textContent...')
+    const textContent = document.body.textContent
+      ?.split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join('\n') || ''
+
+    console.debug(`[Content Script] TextContent method: ${textContent.length} chars`)
+
+    if (textContent.length > text.length) {
+      text = textContent
+    }
+  }
+
+  console.debug(`[Content Script] Final extracted text: ${text.length} chars`)
+  if (text.length < 200) {
+    console.warn(`[Content Script] ⚠️  WARNING: Only ${text.length} chars extracted!`)
+    console.debug(`[Content Script] First 100 chars: "${text.substring(0, 100)}"`)
+    console.debug(`[Content Script] Page title: "${document.title}"`)
+    console.debug(`[Content Script] Page URL: "${window.location.href}"`)
+  }
 
   // Limit to 10,000 characters for backend processing
   return text.substring(0, 10000)
@@ -112,6 +263,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle page content request from popup
   if (message.type === 'REQUEST_PAGE_CONTENT') {
     console.debug('[Content Script] Received page content request')
+
+    // CRITICAL: Don't respond if we're in an ad/tracking frame
+    if (isAdFrame()) {
+      console.debug('[Content Script] 🚫 Ignoring request - running in ad frame')
+      return false // Don't respond, let popup try other frames
+    }
+
+    // Also check if we're the main frame
+    if (!isMainFrame()) {
+      console.debug('[Content Script] ⚠️  Running in iframe (not main frame): ' + window.location.href)
+      // Still try to extract, but log it
+    }
+
     getPageContent()
       .then((content) => {
         console.debug('[Content Script] Sending page content:', {

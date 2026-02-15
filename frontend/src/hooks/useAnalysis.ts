@@ -32,7 +32,7 @@ export function useAnalysis(): UseAnalysisReturn {
   useEffect(() => {
     const globalListener = (message: any) => {
       console.log('🔔 [Popup] Received message:', message.type, message)
-      
+
       if (message.type === 'ANALYSIS_COMPLETE') {
         console.log('✅ [Popup] Analysis complete, setting data:', message.payload.result)
         setData(message.payload.result)
@@ -80,10 +80,27 @@ export function useAnalysis(): UseAnalysisReturn {
         pageContent = await chrome.tabs.sendMessage(tab.id, {
           type: 'REQUEST_PAGE_CONTENT',
         })
+
+        // Validate response - reject ad frames
+        if (pageContent) {
+          const urlHostname = new URL(pageContent.url).hostname
+          const adHostnames = ['pubmatic.com', 'doubleclick.net', 'googleadservices.com', 'ads.', 'adserver', 'recaptcha']
+          const isAdResponse = adHostnames.some(ad => urlHostname.includes(ad))
+
+          if (isAdResponse) {
+            console.warn(`⚠️  [Popup] Got response from ad frame (${urlHostname}), waiting and retrying...`)
+            // Wait 500ms for main frame to respond
+            await new Promise(resolve => setTimeout(resolve, 500))
+            pageContent = await chrome.tabs.sendMessage(tab.id, {
+              type: 'REQUEST_PAGE_CONTENT',
+            })
+          }
+        }
+
         console.log('✓ [Popup] Got page content:', pageContent.url, 'Length:', pageContent.content?.length)
       } catch (sendErr: any) {
         console.warn('⚠ [Popup] Content script not responding, attempting injection...')
-        
+
         const msg = String(sendErr?.message || sendErr)
         if (msg.includes('Receiving end does not exist') || msg.includes('Could not establish connection')) {
           try {
@@ -109,21 +126,54 @@ export function useAnalysis(): UseAnalysisReturn {
       }
 
       if (!pageContent || !pageContent.content || pageContent.content.length < 50) {
-        throw new Error('Page content too short or unavailable. Need at least 50 characters.')
+        const contentLength = pageContent?.content?.length || 0
+        const url = pageContent?.url || 'Unknown'
+        console.error(`❌ [Popup] Content too short: ${contentLength} chars received from ${url}`)
+        console.error(`[Popup] First 100 chars: "${pageContent?.content?.substring(0, 100) || 'N/A'}"`)
+
+        // Check if URL is an ad domain
+        let errorMsg = `Page content too short (${contentLength} chars). Need at least 50 characters.\n\n`
+
+        try {
+          const urlHostname = new URL(url).hostname
+          const adDomains = ['pubmatic', 'doubleclick', 'googleads', 'adserver', 'ads.', 'recaptcha']
+          const isAdDomain = adDomains.some(ad => urlHostname.includes(ad))
+
+          if (isAdDomain || contentLength === 0) {
+            errorMsg += `⚠️  Detected ad frame! The content script may have responded from an advertisement instead of the article.\n\n` +
+              `Try:\n` +
+              `• Wait a moment and click Scan again (main content takes time to load)\n` +
+              `• Check browser console (F12) - content script logs show extraction details\n` +
+              `• Try a different article/website\n` +
+              `• Load the article in a fresh tab`
+          } else {
+            errorMsg += `Try:\n` +
+              `• Loading a page with more text (article, blog post, news)\n` +
+              `• Waiting for the page to fully load\n` +
+              `• Checking browser console for extraction errors`
+          }
+        } catch (e) {
+          errorMsg += `Try:\n` +
+            `• Loading a page with more text (article, blog post, news)\n` +
+            `• Waiting for the page to fully load\n` +
+            `• Checking browser console for extraction errors`
+        }
+
+        throw new Error(errorMsg)
       }
 
       // Check cache first
-      console.log('💾 [Popup] Checking cache...')
-      const cacheKey = `analysis_${pageContent.url}`
+      // console.log('💾 [Popup] Checking cache...')
+      // const cacheKey = `analysis_${pageContent.url}`
 
-      const cached = await chrome.storage.local.get(cacheKey) as Record<string, CachedAnalysis>
+      // const cached = await chrome.storage.local.get(cacheKey) as Record<string, CachedAnalysis>
 
-      if (cached[cacheKey]) {
-        setData(cached[cacheKey].result)
-        setStatus('done')
-        return
-      }
-      console.log('○ [Popup] No cache found, requesting fresh analysis')
+      // if (cached[cacheKey]) {
+      //   setData(cached[cacheKey].result)
+      //   setStatus('done')
+      //   return
+      // }
+      // console.log('○ [Popup] No cache found, requesting fresh analysis')
 
       // Send analysis request to background worker
       console.log('📤 [Popup] Sending ANALYZE_PAGE to service worker...')
@@ -134,7 +184,7 @@ export function useAnalysis(): UseAnalysisReturn {
       // Set up timeout BEFORE sending message
       console.log('⏳ [Popup] Waiting for response (with 120s timeout)...')
       isWaitingRef.current = true
-      
+
       timeoutRef.current = setTimeout(() => {
         if (isWaitingRef.current) {
           console.error('⏰ [Popup] Timeout: No response after 120 seconds')
@@ -153,21 +203,21 @@ export function useAnalysis(): UseAnalysisReturn {
         },
       }, (response: any) => {
         console.log('📥 [Popup] Service worker responded via callback:', response)
-        
+
         // Clear timeout since we got a response
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current)
           timeoutRef.current = null
         }
         isWaitingRef.current = false
-        
+
         if (chrome.runtime.lastError) {
           console.error('❌ [Popup] Runtime error:', chrome.runtime.lastError)
           setError(chrome.runtime.lastError.message || 'Failed to communicate with service worker')
           setStatus('error')
           return
         }
-        
+
         if (response) {
           if (response.type === 'ANALYSIS_COMPLETE') {
             console.log('✅ [Popup] Analysis complete, setting data')
@@ -185,7 +235,7 @@ export function useAnalysis(): UseAnalysisReturn {
           } else if (response.status === 'complete') {
             // Backward compatibility with older worker response shape.
             if (response.cached) {
-              ;(async () => {
+              ; (async () => {
                 const cacheKey = `analysis_${pageContent.url}`
                 const cached = await chrome.storage.local.get(cacheKey) as Record<string, CachedAnalysis>
                 if (cached[cacheKey]?.result) {
@@ -225,20 +275,20 @@ export function useAnalysis(): UseAnalysisReturn {
       timeoutRef.current = null
     }
     isWaitingRef.current = false
-    ;(async () => {
-      try {
-        if (typeof chrome !== 'undefined' && chrome.tabs) {
-          const [tab] = (await chrome.tabs.query({ active: true, currentWindow: true })) as any[]
-          chrome.runtime.sendMessage({
-            type: 'CANCEL_ANALYSIS',
-            payload: { tabId: tab?.id },
-          })
+      ; (async () => {
+        try {
+          if (typeof chrome !== 'undefined' && chrome.tabs) {
+            const [tab] = (await chrome.tabs.query({ active: true, currentWindow: true })) as any[]
+            chrome.runtime.sendMessage({
+              type: 'CANCEL_ANALYSIS',
+              payload: { tabId: tab?.id },
+            })
+          }
+        } catch { } finally {
+          setStatus('idle')
+          setError(null)
         }
-      } catch {} finally {
-        setStatus('idle')
-        setError(null)
-      }
-    })()
+      })()
   }, [])
 
   const reset = useCallback(() => {
