@@ -72,16 +72,13 @@ export function PopupContainer() {
             </div>
 
             {/* Case Report */}
-            <div className="flex flex-col gap-2">
-              <h3 className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-                Case Report
-              </h3>
-              <div className="rounded-sm border border-border bg-muted/50 p-3">
-                <p className="text-[11px] leading-relaxed text-secondary-foreground">
-                  {data.report}
-                </p>
-              </div>
-            </div>
+            <CaseReport
+              claims={data.claimBreakdown || []}
+              credibilityScore={data.credibilityScore}
+              aiGenerationLikelihood={data.aiGenerationLikelihood}
+              manipulationRisk={data.manipulationRisk}
+              report={data.report}
+            />
 
             {/* Sources */}
             <SourceList sources={data.sources} />

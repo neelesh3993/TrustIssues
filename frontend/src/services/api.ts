@@ -29,13 +29,23 @@ export interface AnalysisRequest {
 export interface Source {
   name: string
   headline: string
+  url?: string
+  snippet?: string
   status: string
+}
+
+export interface ClaimDetail {
+  claim: string
+  status: string
+  rationale?: string
+  sources: Source[]
 }
 
 export interface AnalysisResponse {
   aiGenerationLikelihood: number
   credibilityScore: number
   manipulationRisk: number
+  claimBreakdown: ClaimDetail[]
   findings: string[]
   sources: Source[]
   report: string

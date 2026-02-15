@@ -18,7 +18,7 @@ function isAdFrame(): boolean {
   const url = window.location.href
   const hostname = window.location.hostname
 
-  // List of known ad/tracking domains to skip
+  // List of known ad/tracking/bot-detection domains to skip
   const adDomains = [
     'doubleclick.net',
     'googleadservices.com',
@@ -45,13 +45,25 @@ function isAdFrame(): boolean {
     'js/showad',
     'pixeltrack',
     'beacon',
-    'dpm.demdex'
+    'dpm.demdex',
+    // Bot detection & challenge iframes
+    'recaptcha',
+    'challenges.cloudflare',
+    'challenge.cloudflare',
+    'captcha',
+    'turnstile',
+    // Other common iframes
+    'facebook.com/plugins',
+    'instagram.com/embed',
+    'twitter.com/embed',
+    'youtube.com/embed',
+    'youtube-nocookie.com'
   ]
 
   // Check if URL or hostname matches ad patterns
   for (const adDomain of adDomains) {
     if (url.toLowerCase().includes(adDomain) || hostname.toLowerCase().includes(adDomain)) {
-      console.debug(`[Content Script] 🚫 Detected ad frame: ${hostname}`)
+      console.debug(`[Content Script] 🚫 Detected ad/iframe frame: ${hostname} (matched: ${adDomain})`)
       return true
     }
   }
@@ -262,17 +274,20 @@ async function getPageContent() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle page content request from popup
   if (message.type === 'REQUEST_PAGE_CONTENT') {
-    console.debug('[Content Script] Received page content request')
+    const frameUrl = window.location.href
+    const isMain = isMainFrame()
+    console.debug(`[Content Script] Received page content request from frameId ${sender.frameId} (main: ${isMain}, url: ${frameUrl})`)
 
     // CRITICAL: Don't respond if we're in an ad/tracking frame
     if (isAdFrame()) {
-      console.debug('[Content Script] 🚫 Ignoring request - running in ad frame')
+      console.debug('[Content Script] 🚫 Ignoring request - running in ad frame, not responding')
       return false // Don't respond, let popup try other frames
     }
 
-    // Also check if we're the main frame
-    if (!isMainFrame()) {
-      console.debug('[Content Script] ⚠️  Running in iframe (not main frame): ' + window.location.href)
+    // Log if not main frame but still responding
+    if (!isMain) {
+      console.debug('[Content Script] ⚠️  Running in iframe (not main frame): ' + frameUrl)
+      console.debug('[Content Script] Still responding because it passed ad frame check')
       // Still try to extract, but log it
     }
 

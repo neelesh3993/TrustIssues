@@ -62,14 +62,24 @@ async def analyze_content(request: AnalysisRequest):
             request.content, claims, verification_results)
 
         # Calculate scores
-        credibility_score = _calculate_credibility(verification_results)
+        ai_likelihood = _calculate_ai_likelihood(request.content)
+        manipulation_risk = _calculate_manipulation_risk(request.content)
+
+        # Check for low-credibility sources (user-generated content)
+        source_url = request.url.lower() if request.url else ""
+        credibility_penalty = _get_source_credibility_penalty(source_url)
+
+        credibility_score = _calculate_credibility_integrated(
+            verification_results, ai_likelihood, manipulation_risk, credibility_penalty)
         findings = _extract_findings(verification_results)
         sources = _format_sources(verification_results)
+        claim_breakdown = _format_claims(verification_results)
 
         response = AnalysisResponse(
-            aiGenerationLikelihood=_calculate_ai_likelihood(request.content),
+            aiGenerationLikelihood=ai_likelihood,
             credibilityScore=credibility_score,
-            manipulationRisk=_calculate_manipulation_risk(request.content),
+            manipulationRisk=manipulation_risk,
+            claimBreakdown=claim_breakdown,
             findings=findings,
             sources=sources,
             report=summary
@@ -149,6 +159,121 @@ def _calculate_credibility(verification_results: List[dict]) -> float:
     return max(0.0, min(100.0, credibility))
 
 
+def _get_source_credibility_penalty(url: str) -> float:
+    """
+    Determine credibility penalty based on source domain.
+
+    User-generated content sites and opinion forums should have lower credibility ceilings.
+
+    Args:
+        url: The page URL
+
+    Returns:
+        Penalty multiplier (0.0-1.0) where 1.0 = no penalty, 0.2 = 80% penalty
+    """
+    url_lower = url.lower()
+
+    # Low-credibility sources: user-generated or opinion-based
+    # These should have credibility capped well below 50
+    low_credibility_domains = [
+        'quora.com',
+        'reddit.com',
+        'medium.com',
+        'stackoverflow.com',
+        'twitter.com',
+        'x.com',
+        'facebook.com',
+        'instagram.com',
+        'tiktok.com',
+        'threads.net',
+        'bluesky.social',
+        'mastodon.',
+        'substack.com',
+        'patreon.com',
+        'wordpress.com',  # Personal blogs
+        'blogger.com',    # Personal blogs
+        'wix.com',        # Personal sites
+        '.substack.',     # Substack newsletters
+        'blog.',          # Generic blogs
+    ]
+
+    # Check if URL matches low-credibility domain
+    for domain in low_credibility_domains:
+        if domain in url_lower:
+            logger.debug(f"Detected low-credibility source: {domain}")
+            return 0.25  # 75% penalty - max credibility will be ~25
+
+    # Medium-credibility sources: opinion journalism, blogs
+    medium_credibility_domains = [
+        'medium.com/p/',  # Medium published articles (better than blog)
+        'substack.com/p/',  # Substack articles
+    ]
+
+    for domain in medium_credibility_domains:
+        if domain in url_lower:
+            logger.debug(f"Detected medium-credibility source: {domain}")
+            return 0.40  # 60% penalty
+
+    # News and reputable sources - no penalty
+    return 1.0  # Full credibility possible
+
+
+def _calculate_credibility_integrated(verification_results: List[dict], ai_likelihood: float, manipulation_risk: float, source_penalty: float = 1.0) -> float:
+    """
+    Calculate credibility by integrating verification results with AI likelihood and manipulation risk.
+
+    Logic:
+    - Low AI generation + Low manipulation + Good verification = HIGH credibility
+    - High AI generation OR High manipulation = LOWER credibility
+    - Authentic human-written content with low manipulation = strong credibility signal
+    - User-generated content (Quora, Reddit, etc.) has lower credibility ceiling
+
+    Args:
+        verification_results: List of verification results
+        ai_likelihood: AI generation likelihood (0-100)
+        manipulation_risk: Manipulation risk score (0-100)
+        source_penalty: Multiplier for source credibility (0.0-1.0)
+
+    Returns:
+        Integrated credibility score (0-100)
+    """
+    # Factor 1: Verification strength (increased to 50% - most important)
+    # This captures claim verification, source authority, agreement
+    verification_strength = _calculate_credibility(verification_results)
+
+    # Factor 2: AI authenticity (inverted - low AI = high trust)
+    # Reduced from 40% to 25% - less important than verification
+    ai_authenticity = 100 - ai_likelihood  # 0-100: higher is better
+
+    # Factor 3: Manipulation resistance (inverted - low manipulation = high trust)
+    # Kept at 25% - important but not as important as verification
+    manipulation_resistance = 100 - manipulation_risk  # 0-100: higher is better
+
+    # Integrated formula: Prioritize verification for credibility
+    # 50% Verification + 25% AI Authenticity + 25% Non-manipulation
+    integrated_score = (
+        verification_strength * 0.50 +
+        ai_authenticity * 0.25 +
+        manipulation_resistance * 0.25
+    )
+
+    # Apply source-based penalty (e.g., Quora user content gets capped)
+    # This ensures user-generated content is never rated as highly credible
+    final_score = integrated_score * source_penalty
+
+    logger.debug(
+        f"Integrated Credibility: "
+        f"verification={verification_strength:.1f}% (50% weight), "
+        f"ai_authenticity={ai_authenticity:.1f}% (25% weight), "
+        f"manipulation_resistance={manipulation_resistance:.1f}% (25% weight), "
+        f"before_penalty={integrated_score:.1f}%, "
+        f"penalty={source_penalty:.2f}x, "
+        f"final_score={final_score:.1f}%"
+    )
+
+    return max(0.0, min(100.0, final_score))
+
+
 def _calculate_ai_likelihood(content: str) -> float:
     sentences = re.split(r'[.!?]+', content)
     sentences = [s.strip() for s in sentences if len(s.split()) > 3]
@@ -193,13 +318,14 @@ def _calculate_manipulation_risk(content: str) -> float:
     # ---- Layer 1: Emotional intensity ----
     emotional_words = [
         "outrage", "shocking", "incredible", "unbelievable",
-        "corrupt", "evil", "disaster", "exposed"
+        "corrupt", "evil", "disaster", "exposed", "amazing",
+        "extremely", "absolutely", "ridiculous", "disgusting"
     ]
     emotional_count = sum(
         content.lower().count(w) for w in emotional_words)
     emotional_score = min(100, emotional_count * 12)
 
-    # ---- Layer 2: Certainty language ----
+    # ---- Layer 2: Certainty language (false confidence) ----
     certainty_words = ["prove", "guarantee", "undeniable", "always", "never"]
     certainty_count = sum(content.lower().count(w)
                           for w in certainty_words)
@@ -215,20 +341,60 @@ def _calculate_manipulation_risk(content: str) -> float:
     conspiracy_score = 30 if any(
         p in content.lower() for p in conspiracy_patterns) else 0
 
-    # ---- Layer 4: punctuation pressure ----
+    # ---- Layer 4: Subjective opinion markers (NEW) ----
+    # High presence of opinion language indicates speculative/unverified content
+    opinion_markers = [
+        "i think", "i believe", "i would say", "in my opinion",
+        "in my experience", "from my perspective", "i would argue",
+        "i personally", "i feel", "i think that", "arguably",
+        "it seems", "it appears", "one could say", "one might argue"
+    ]
+    opinion_count = sum(
+        1 for marker in opinion_markers if marker in content.lower())
+    # Increased multiplier - high opinion content = high manipulation risk
+    # Allow scores to go above 100 when there's extreme opinion language
+    opinion_score = min(110, opinion_count * 25)
+
+    # ---- Layer 5: Speculation and uncertainty markers (NEW) ----
+    # These indicate unverified claims and speculation
+    speculation_markers = [
+        "maybe", "probably", "possibly", "perhaps", "might be",
+        "could be", "seems like", "appears to be", "supposedly",
+        "allegedly", "supposedly", "so called", "claimed"
+    ]
+    speculation_count = sum(
+        1 for marker in speculation_markers if marker in content.lower())
+    # Increased multiplier - speculation = high manipulation risk
+    speculation_score = min(100, speculation_count * 15)
+
+    # ---- Layer 6: Punctuation pressure ----
     exclamations = content.count("!")
     caps_words = sum(1 for w in words if w.isupper() and len(w) > 3)
-
+    # Questions indicate uncertainty/engagement bait
+    question_marks = content.count("?") * 5
     punctuation_score = min(
         100,
-        exclamations * 4 + caps_words * 2
+        exclamations * 4 + caps_words * 2 + question_marks
     )
 
     manipulation = (
-        0.25 * emotional_score +
-        0.25 * certainty_score +
-        0.25 * conspiracy_score +
-        0.25 * punctuation_score
+        0.05 * emotional_score +
+        0.05 * certainty_score +
+        0.05 * conspiracy_score +
+        0.60 * opinion_score +
+        0.20 * speculation_score +
+        0.05 * punctuation_score
+    )
+
+    logger.debug(
+        f"Manipulation Risk Breakdown: "
+        f"emotional={emotional_score:.1f}, "
+        f"certainty={certainty_score:.1f}, "
+        f"conspiracy={conspiracy_score:.1f}, "
+        f"opinion={opinion_score:.1f}, "
+        f"speculation={speculation_score:.1f}, "
+        f"punctuation={punctuation_score:.1f}, "
+        f"final={manipulation:.1f}"
     )
 
     return max(0.0, min(100.0, manipulation))
@@ -360,3 +526,41 @@ def _format_sources(verification_results: List[dict]) -> List[Source]:
             sources.append(source_obj)
 
     return sources
+
+
+def _format_claims(verification_results: List[dict]) -> List:
+    """
+    Format verification results as ClaimDetail objects for API response.
+
+    Args:
+        verification_results: List of verification result dicts
+
+    Returns:
+        List of ClaimDetail objects
+    """
+    from app.models.schemas import ClaimDetail, Source
+
+    claims = []
+
+    for result in verification_results:
+        # Format sources for this claim
+        claim_sources = []
+        for source in result.get("sources", []):
+            source_obj = Source(
+                name=source.get("name", "Unknown"),
+                headline=source.get("headline", ""),
+                url=source.get("url"),
+                snippet=source.get("snippet"),
+                status=result.get("status", "uncertain")
+            )
+            claim_sources.append(source_obj)
+
+        claim_detail = ClaimDetail(
+            claim=result.get("claim", ""),
+            status=result.get("status", "uncertain"),
+            rationale=result.get("rationale", ""),
+            sources=claim_sources
+        )
+        claims.append(claim_detail)
+
+    return claims

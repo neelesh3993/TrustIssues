@@ -34,8 +34,23 @@ class Source(BaseModel):
     """Source reference for credibility claims"""
     name: str = Field(..., description="Source name or domain")
     headline: str = Field(..., description="Source headline or summary")
+    url: Optional[str] = Field(None, description="Source URL")
+    snippet: Optional[str] = Field(None, description="Source snippet")
     status: str = Field(...,
                         description="Verification status (verified/disputed/uncertain)")
+
+
+class ClaimDetail(BaseModel):
+    """Detailed information about a verified claim"""
+    claim: str = Field(..., description="The claim text")
+    status: str = Field(...,
+                        description="Verification status (verified/disputed/uncertain)")
+    rationale: Optional[str] = Field(
+        None, description="Explanation for the verification status"
+    )
+    sources: List[Source] = Field(
+        default_factory=list, description="Sources supporting/contradicting this claim"
+    )
 
 
 class AnalysisResponse(BaseModel):
@@ -48,6 +63,9 @@ class AnalysisResponse(BaseModel):
     )
     manipulationRisk: float = Field(
         ..., description="Risk of content manipulation (0-100%)"
+    )
+    claimBreakdown: List[ClaimDetail] = Field(
+        default_factory=list, description="Detailed breakdown of verified claims"
     )
     findings: List[str] = Field(
         default_factory=list, description="Key findings from analysis")

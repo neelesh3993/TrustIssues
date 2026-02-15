@@ -8,7 +8,6 @@
     "scripting",
     "storage",
     "activeTab",
-    "webRequest",
     "alarms"
   ],
   "host_permissions": [

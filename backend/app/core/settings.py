@@ -12,7 +12,7 @@ import os
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables and .env file.
-    
+
     Attributes:
         gemini_api_key: Google Gemini API key (required for production)
         gemini_model: Model name for Gemini API (default: "gemini-1.5-flash")
@@ -23,16 +23,18 @@ class Settings(BaseSettings):
         request_timeout_seconds: HTTP request timeout in seconds (default: 20)
         max_claims: Maximum number of claims to extract (default: 5)
     """
-    
+
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-1.5-flash"
+    backboard_api_key: Optional[str] = None  # Alternative AI provider
+    backboard_model: str = "default"  # Backboard model name
     news_api_key: Optional[str] = None
     newsapi_endpoint: str = "https://newsapi.org/v2/everything"
     newsapi_page_size: int = 5
     newsapi_language: str = "en"
     request_timeout_seconds: int = 20
     max_claims: int = 5
-    
+
     class Config:
         """Pydantic config to load from .env file."""
         env_file = ".env"
@@ -46,7 +48,7 @@ def get_settings() -> Settings:
     """
     Get cached settings instance.
     Uses LRU cache to ensure only one Settings object is created.
-    
+
     Returns:
         Settings: Singleton settings instance
     """
@@ -57,20 +59,20 @@ def validate_required_keys():
     """
     Validate that required API keys are set.
     Raises ValueError with clear instructions if keys are missing.
-    
+
     Raises:
         ValueError: If required keys are not configured
     """
     settings = get_settings()
-    
+
     missing_keys = []
-    
+
     if not settings.gemini_api_key:
         missing_keys.append("GEMINI_API_KEY")
-    
+
     if not settings.news_api_key:
         missing_keys.append("NEWS_API_KEY")
-    
+
     if missing_keys:
         keys_str = ", ".join(missing_keys)
         raise ValueError(

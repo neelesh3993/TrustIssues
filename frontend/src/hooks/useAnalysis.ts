@@ -71,31 +71,22 @@ export function useAnalysis(): UseAnalysisReturn {
       console.log('📑 [Popup] Getting current tab...')
       const [tab] = (await chrome.tabs.query({ active: true, currentWindow: true })) as any[]
       if (!tab || !tab.id) throw new Error('No active tab found')
-      console.log('✓ [Popup] Current tab:', tab.url)
+      if (!tab.url) throw new Error('No tab URL found')
 
-      // Request page content from content script
-      console.log('📨 [Popup] Requesting page content from content script...')
+      const pageUrl = tab.url
+      console.log('✓ [Popup] Current tab URL:', pageUrl)
+      console.log('✓ [Popup] Tab ID:', tab.id)
+
+      // Request page content from MAIN FRAME ONLY (frameId: 0)
+      // This avoids getting responses from ad frames, reCAPTCHA, iframes, etc.
+      console.log('📨 [Popup] Requesting page content from main frame (frameId 0)...')
       let pageContent: any
       try {
-        pageContent = await chrome.tabs.sendMessage(tab.id, {
-          type: 'REQUEST_PAGE_CONTENT',
-        })
-
-        // Validate response - reject ad frames
-        if (pageContent) {
-          const urlHostname = new URL(pageContent.url).hostname
-          const adHostnames = ['pubmatic.com', 'doubleclick.net', 'googleadservices.com', 'ads.', 'adserver', 'recaptcha']
-          const isAdResponse = adHostnames.some(ad => urlHostname.includes(ad))
-
-          if (isAdResponse) {
-            console.warn(`⚠️  [Popup] Got response from ad frame (${urlHostname}), waiting and retrying...`)
-            // Wait 500ms for main frame to respond
-            await new Promise(resolve => setTimeout(resolve, 500))
-            pageContent = await chrome.tabs.sendMessage(tab.id, {
-              type: 'REQUEST_PAGE_CONTENT',
-            })
-          }
-        }
+        pageContent = await chrome.tabs.sendMessage(
+          tab.id,
+          { type: 'REQUEST_PAGE_CONTENT', url: pageUrl },
+          { frameId: 0 } // CRITICAL: Only request from main frame, ignore iframes
+        )
 
         console.log('✓ [Popup] Got page content:', pageContent.url, 'Length:', pageContent.content?.length)
       } catch (sendErr: any) {
@@ -107,9 +98,12 @@ export function useAnalysis(): UseAnalysisReturn {
             if (chrome.scripting && chrome.scripting.executeScript) {
               console.log('💉 [Popup] Injecting content script...')
               await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
+                target: { tabId: tab.id, allFrames: true },
                 files: ['src/content.js'],
               })
+              console.log('⏳ [Popup] Waiting 500ms for injection to take effect...')
+              await new Promise(resolve => setTimeout(resolve, 500))
+
               pageContent = await chrome.tabs.sendMessage(tab.id, {
                 type: 'REQUEST_PAGE_CONTENT',
               })
@@ -118,7 +112,12 @@ export function useAnalysis(): UseAnalysisReturn {
               throw new Error('Content script missing and chrome.scripting API unavailable')
             }
           } catch (injectErr: any) {
-            throw new Error('Failed to inject content script: ' + (injectErr?.message || injectErr))
+            console.error('💥 [Popup] Injection failed:', injectErr)
+            throw new Error('Failed to inject content script. Check that:\n' +
+              '• Extension is loaded (refresh extension in chrome://extensions)\n' +
+              '• You\'re on an http/https page (not chrome://, file://, etc.)\n' +
+              '• Content script file exists at src/content.js\n' +
+              'Details: ' + (injectErr?.message || injectErr))
           }
         } else {
           throw sendErr
@@ -131,33 +130,13 @@ export function useAnalysis(): UseAnalysisReturn {
         console.error(`❌ [Popup] Content too short: ${contentLength} chars received from ${url}`)
         console.error(`[Popup] First 100 chars: "${pageContent?.content?.substring(0, 100) || 'N/A'}"`)
 
-        // Check if URL is an ad domain
-        let errorMsg = `Page content too short (${contentLength} chars). Need at least 50 characters.\n\n`
-
-        try {
-          const urlHostname = new URL(url).hostname
-          const adDomains = ['pubmatic', 'doubleclick', 'googleads', 'adserver', 'ads.', 'recaptcha']
-          const isAdDomain = adDomains.some(ad => urlHostname.includes(ad))
-
-          if (isAdDomain || contentLength === 0) {
-            errorMsg += `⚠️  Detected ad frame! The content script may have responded from an advertisement instead of the article.\n\n` +
-              `Try:\n` +
-              `• Wait a moment and click Scan again (main content takes time to load)\n` +
-              `• Check browser console (F12) - content script logs show extraction details\n` +
-              `• Try a different article/website\n` +
-              `• Load the article in a fresh tab`
-          } else {
-            errorMsg += `Try:\n` +
-              `• Loading a page with more text (article, blog post, news)\n` +
-              `• Waiting for the page to fully load\n` +
-              `• Checking browser console for extraction errors`
-          }
-        } catch (e) {
-          errorMsg += `Try:\n` +
-            `• Loading a page with more text (article, blog post, news)\n` +
-            `• Waiting for the page to fully load\n` +
-            `• Checking browser console for extraction errors`
-        }
+        let errorMsg = `Page content too short (${contentLength} chars). Need at least 50 characters of article text.\n\n`
+        errorMsg += `Try:\n`
+        errorMsg += `• Wait for the page to fully load (some articles load dynamically)\n`
+        errorMsg += `• Make sure you're viewing an article or article-like content\n`
+        errorMsg += `• Avoid pages with mostly images, videos, or interactive content\n`
+        errorMsg += `• Check browser console (F12) for extraction errors\n`
+        errorMsg += `• Refresh the page and try again`
 
         throw new Error(errorMsg)
       }
