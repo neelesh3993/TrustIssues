@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./public",
+    "module": "es2020",
+    "target": "es2020",
+    "noEmitOnError": true,
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["src/**/*.{ts,tsx}"],
+  "exclude": ["node_modules"]
+}

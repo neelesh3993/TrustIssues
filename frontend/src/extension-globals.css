@@ -1,0 +1,48 @@
+/* Extension global styles to match Next app typography and colors */
+:root {
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace;
+
+  /* Color system copied from app/globals.css */
+  --background: 0 0% 5%;
+  --foreground: 0 0% 92%;
+  --card: 0 0% 8%;
+  --card-foreground: 0 0% 92%;
+  --popover: 0 0% 8%;
+  --popover-foreground: 0 0% 92%;
+  --primary: 0 0% 92%;
+  --primary-foreground: 0 0% 5%;
+  --secondary: 0 0% 14%;
+  --secondary-foreground: 0 0% 80%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 50%;
+  --accent: 0 0% 18%;
+  --accent-foreground: 0 0% 92%;
+  --destructive: 0 50% 45%;
+  --destructive-foreground: 0 0% 92%;
+  --border: 0 0% 18%;
+  --input: 0 0% 18%;
+  --ring: 0 0% 50%;
+  --chart-1: 0 0% 70%;
+  --chart-2: 0 0% 55%;
+  --chart-3: 0 0% 40%;
+  --chart-4: 0 0% 30%;
+  --chart-5: 0 0% 20%;
+  --radius: 0.25rem;
+}
+
+html, body {
+  font-family: var(--font-mono);
+}
+
+/* Keep popup width consistent and apply color tokens */
+body {
+  width: 360px;
+  margin: 0;
+  padding: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+/* Minimal resets similar to app globals */
+* { box-sizing: border-box }
+
