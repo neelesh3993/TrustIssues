@@ -6,13 +6,12 @@ import { ScanButton } from "./scan-button"
 import { LoadingState } from "./loading-state"
 import { ScoreBar } from "./score-bar"
 import { CaseReport } from "./case-report"
-import { SourceList } from "./source-list"
 import { FindingsList } from "./findings-list"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
 
 export function PopupContainer() {
-  const { status, data, error, analyze, reset } = useAnalysis()
+  const { status, data, error, fromCache, analyze, reset } = useAnalysis()
 
   const handleScan = async () => {
     await analyze()
@@ -26,12 +25,16 @@ export function PopupContainer() {
     <div className="mx-auto flex min-h-screen w-full max-w-[360px] flex-col bg-background">
       {/* Header */}
       <header className="flex flex-col gap-0.5 px-4 pb-3 pt-5">
-        <h1 className="text-sm font-bold uppercase tracking-[0.3em] text-foreground">
-          Trust Issues
-        </h1>
-        <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-          Web Content Investigation Tool
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-sm font-bold uppercase tracking-[0.3em] text-foreground">
+              Trust Issues
+            </h1>
+            <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+              Web Content Investigation Tool
+            </p>
+          </div>
+        </div>
         <div className="mt-3 h-px w-full bg-border" />
       </header>
 
@@ -52,6 +55,18 @@ export function PopupContainer() {
         {/* Results */}
         {status === "done" && data && (
           <div className="flex flex-col gap-5">
+            {/* Case Files Notice */}
+            {fromCache && (
+              <div className="rounded-sm border border-blue-500/30 bg-blue-500/10 p-3">
+                <p className="text-[10px] uppercase tracking-[0.1em] font-semibold text-blue-500">
+                  📁 Pulled Information from Case Report
+                </p>
+                <p className="text-[9px] text-blue-400/80 mt-1">
+                  This analysis was retrieved from your case files instead of running a fresh scan.
+                </p>
+              </div>
+            )}
+
             {/* Score Bars */}
             <div className="flex flex-col gap-4 rounded-sm border border-border bg-card p-3">
               <ScoreBar
@@ -79,9 +94,6 @@ export function PopupContainer() {
               manipulationRisk={data.manipulationRisk}
               report={data.report}
             />
-
-            {/* Sources */}
-            <SourceList sources={data.sources} />
 
             {/* Findings */}
             <FindingsList findings={data.findings} />

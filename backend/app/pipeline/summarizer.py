@@ -6,7 +6,6 @@ Generates human-readable summaries using Gemini AI.
 from app.clients.ai_client import get_ai_client
 import logging
 from typing import List, Dict
-from app.clients.gemini_client import get_gemini_client
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +16,7 @@ def generate_summary(
     verification_results: List[Dict]
 ) -> str:
     """
-    Generate a human-readable summary of the analysis using Gemini.
-
-    The summary is grounded in the verification results and includes:
-    - Overview of verified/disputed/uncertain claims
-    - Key findings
-    - Recommendations
-
-    Includes fallback to manual summary if Gemini fails.
+    Generate a concise summary focused on key findings and recommendations.
 
     Args:
         content: Original content analyzed
@@ -32,14 +24,7 @@ def generate_summary(
         verification_results: Results from verification pipeline
 
     Returns:
-        Summary string (2-4 sentences)
-
-    Examples:
-        >>> content = "Climate change is real and accelerating."
-        >>> claims = ["Climate change is accelerating"]
-        >>> results = [{"status": "verified", "rationale": "Supported by scientific consensus"}]
-        >>> summary = generate_summary(content, claims, results)
-        >>> print(summary)
+        Summary string (2-3 sentences)
     """
     if not verification_results:
         logger.warning("No verification results provided for summary")
@@ -53,70 +38,66 @@ def generate_summary(
     uncertain_count = sum(
         1 for r in verification_results if r.get("status") == "uncertain")
 
-    # Create evidence summary for Gemini
-    evidence_summary = _format_evidence_summary(verification_results)
+    # Get disputed claims for emphasis
+    disputed_claims = [r.get("claim") for r in verification_results if r.get("status") == "disputed"]
 
     try:
-        prompt = f"""Analyze the following content analysis results and generate a concise, expert summary.
-The summary should be grounded ONLY in the provided verification results.
+        prompt = f"""Generate a concise, expert assessment (2-3 sentences max) focusing on key findings and recommendations.
 
-ORIGINAL CONTENT:
-{content[:500]}...
+CLAIM VERIFICATION SUMMARY:
+- Verified: {verified_count}
+- Disputed: {disputed_count}
+- Uncertain: {uncertain_count}
 
-VERIFICATION RESULTS SUMMARY:
-- Verified claims: {verified_count}
-- Disputed claims: {disputed_count}
-- Uncertain claims: {uncertain_count}
+{f'Disputed claims to highlight: {disputed_claims}' if disputed_claims else ''}
 
-DETAILED EVIDENCE:
-{evidence_summary}
+Provide:
+1. KEY FINDING: Overall credibility assessment (HIGH/MIXED/LOW)
+2. CRITICAL ISSUES: If there are disputed claims, what they are
+3. RECOMMENDATION: What the reader should do (trust/verify further/be skeptical)
 
-Generate a 2-4 sentence expert summary that:
-1. Explains the overall credibility based on verified/disputed/uncertain counts
-2. Highlights any key disputed claims (if any)
-3. Recommends next steps
-
-Be direct and avoid hedging language."""
+Be direct, clear, and concise. No hedging."""
 
         client = get_ai_client()
-        summary = client.generate_text(prompt, temperature=0.5, max_tokens=256)
-
-        logger.info("Summary generated successfully")
-        return summary.strip()
+        summary = client.generate_text(prompt, temperature=0.3, max_tokens=200)
+        
+        if summary and summary.strip():
+            logger.info("Summary generated successfully")
+            return summary.strip()
+        else:
+            raise ValueError("Empty summary from AI")
 
     except Exception as e:
         logger.error(
-            f"Gemini summary generation failed: {str(e)}, using fallback")
+            f"Summary generation failed: {str(e)}, using fallback")
         return _generate_fallback_summary(verified_count, disputed_count, uncertain_count)
 
 
 def _format_evidence_summary(verification_results: List[Dict]) -> str:
     """
-    Format verification results into a readable evidence summary for Gemini.
+    Format verification results into a readable evidence summary.
 
     Args:
         verification_results: List of verification result dictionaries
 
     Returns:
-        Formatted string for Gemini prompt
+        Formatted string with key findings
     """
     summary = ""
+    verified = [r for r in verification_results if r.get("status") == "verified"]
+    disputed = [r for r in verification_results if r.get("status") == "disputed"]
 
-    for i, result in enumerate(verification_results, 1):
-        claim = result.get("claim", "Unknown")
-        status = result.get("status", "uncertain")
-        rationale = result.get("rationale", "No information")
-        sources = result.get("sources", [])
-
-        summary += f"{i}. [{status.upper()}] {claim}\n"
-        summary += f"   Reason: {rationale}\n"
-
-        if sources:
-            summary += f"   Sources: {len(sources)} retrieved\n"
-
+    if verified:
+        summary += f"VERIFIED ({len(verified)}): "
+        summary += ", ".join([v.get("claim")[:50] for v in verified[:2]])
         summary += "\n"
 
-    return summary
+    if disputed:
+        summary += f"DISPUTED ({len(disputed)}): "
+        summary += ", ".join([d.get("claim")[:50] for d in disputed[:2]])
+        summary += "\n"
+
+    return summary if summary else "No claims analyzed."
 
 
 def _generate_fallback_summary(

@@ -16,6 +16,7 @@ interface UseAnalysisReturn {
   status: AnalysisStatus
   data: AnalysisResponse | null
   error: string | null
+  fromCache: boolean
   analyze: () => Promise<void>
   cancel: () => void
   reset: () => void
@@ -25,6 +26,7 @@ export function useAnalysis(): UseAnalysisReturn {
   const [status, setStatus] = useState<AnalysisStatus>('idle')
   const [data, setData] = useState<AnalysisResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [fromCache, setFromCache] = useState(false)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isWaitingRef = useRef(false)
 
@@ -36,6 +38,7 @@ export function useAnalysis(): UseAnalysisReturn {
       if (message.type === 'ANALYSIS_COMPLETE') {
         console.log('✅ [Popup] Analysis complete, setting data:', message.payload.result)
         setData(message.payload.result)
+        setFromCache(message.payload.cached === true)
         setStatus('done')
       } else if (message.type === 'ANALYSIS_ERROR') {
         console.error('❌ [Popup] Analysis error:', message.payload.error)
@@ -201,6 +204,7 @@ export function useAnalysis(): UseAnalysisReturn {
           if (response.type === 'ANALYSIS_COMPLETE') {
             console.log('✅ [Popup] Analysis complete, setting data')
             setData(response.payload.result)
+            setFromCache(response.payload.cached === true)
             setStatus('done')
           } else if (response.type === 'ANALYSIS_ERROR') {
             console.error('❌ [Popup] Analysis error:', response.payload.error)
@@ -275,7 +279,8 @@ export function useAnalysis(): UseAnalysisReturn {
     setStatus('idle')
     setData(null)
     setError(null)
+    setFromCache(false)
   }, [])
 
-  return { status, data, error, analyze, cancel, reset }
+  return { status, data, error, fromCache, analyze, cancel, reset }
 }

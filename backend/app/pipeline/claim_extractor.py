@@ -110,28 +110,57 @@ def _parse_claims_json(response_text: str, max_claims: int) -> List[str]:
 def _extract_claims_heuristic(content: str, max_claims: int) -> List[str]:
     """
     Fallback heuristic extraction if Gemini or JSON parsing fails.
-    Extracts sentences containing numbers, dates, or attribution keywords.
+    Extracts sentences containing factual information while filtering noise.
     
     Args:
         content: Text content to analyze
         max_claims: Maximum claims to extract
     
     Returns:
-        List of extracted claims
+        List of extracted claims (filtered for noise)
     """
     claims = []
     sentences = content.split(".")
-    keywords = ["said", "reported", "claimed", "stated", "announced", "found", "discovered",
-                "published", "released", "revealed", "confirmed", "estimated", "reported that"]
+    
+    # Attribution and action keywords that indicate factual claims
+    action_keywords = ["said", "reported", "claimed", "stated", "announced", "found", "discovered",
+                       "published", "released", "revealed", "confirmed", "estimated", "shows",
+                       "indicates", "demonstrates", "proves", "shows that", "arguing", "believes"]
+    
+    # Noise patterns to filter out (dates, navigation, etc.)
+    noise_patterns = [
+        r"^\d{1,2},\s*\d{4}",  # "12, 2026" style dates
+        r"^Share\s*Read",       # Navigation text
+        r"^(Next|Previous|Top|Bottom)",  # Navigation
+        r"^\d{1,2}:\d{2}",      # Times
+        r"^(GMT|EST|UTC|PST)",   # Timezones
+    ]
+    
+    import re
     
     for sentence in sentences:
         sentence = sentence.strip()
         
-        # Look for sentences with numbers/dates or attribution keywords
-        has_number = any(char.isdigit() for char in sentence)
-        has_keyword = any(word in sentence.lower() for word in keywords)
+        # Skip if too short
+        if len(sentence) < 10:
+            continue
         
-        if sentence and (has_number or has_keyword):
+        # Skip noise patterns
+        is_noise = False
+        for pattern in noise_patterns:
+            if re.match(pattern, sentence, re.IGNORECASE):
+                is_noise = True
+                break
+        
+        if is_noise:
+            continue
+        
+        # Look for sentences with numbers/dates or action keywords (indicating factual claims)
+        has_number = any(char.isdigit() for char in sentence)
+        has_keyword = any(word in sentence.lower() for word in action_keywords)
+        
+        # Require either a number/date or an action keyword, and 15+ characters
+        if sentence and len(sentence) >= 15 and (has_number or has_keyword):
             claims.append(sentence)
     
     logger.info(f"Extracted {len(claims)} claims using heuristics (Gemini unavailable)")

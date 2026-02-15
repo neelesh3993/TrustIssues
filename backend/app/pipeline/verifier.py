@@ -116,30 +116,33 @@ def _verify_single_claim_ai(claim: str) -> Dict:
 
 def _classify_claim_with_gemini(claim: str, source_text: str, sources: List[Dict]) -> Dict:
     """
-    Use Gemini to classify a claim based on retrieved evidence.
+    Use Gemini to classify a claim based on evidence or own knowledge.
 
     Args:
         claim: The claim to classify
-        source_text: Formatted evidence from NewsAPI
+        source_text: Formatted evidence from NewsAPI (or empty if none)
         sources: Raw source list for output
 
     Returns:
         Classification result with status and rationale
     """
-    prompt = f"""You are a fact-checking expert. Classify the following claim as VERIFIED, DISPUTED, or UNCERTAIN based on the provided evidence.
+    prompt = f"""You are a fact-checking expert. Classify the following claim as VERIFIED, DISPUTED, or UNCERTAIN.
+
+If news evidence is provided, use it. If not, use your own knowledge and reasoning to make a decision.
+Be decisive: only use UNCERTAIN if the claim is truly ambiguous or unknowable.
 
 CLAIM: {claim}
 
 EVIDENCE:
-{source_text}
+{source_text if source_text.strip() else "No news sources available. Use your own knowledge."}
 
-Respond with ONLY a JSON object (no markdown, no explanation, no extra text):
+Respond with ONLY a JSON object (no markdown, no explanation):
 {{
   "status": "verified" or "disputed" or "uncertain",
-  "rationale": "1-2 sentence explanation based on the evidence provided"
+  "rationale": "1-2 sentence explanation"
 }}
 
-Be specific: VERIFIED means strong corroborating evidence found, DISPUTED means contradictory evidence found, UNCERTAIN means insufficient evidence."""
+Be specific and direct."""
 
     try:
         client = get_ai_client()
@@ -180,31 +183,45 @@ Be specific: VERIFIED means strong corroborating evidence found, DISPUTED means 
 
 def _parse_classification_json(response_text: str) -> Dict:
     """
-    Parse classification JSON from Gemini response.
+    Parse classification JSON from AI response with robust error handling.
 
     Args:
-        response_text: Raw response from Gemini
+        response_text: Raw response from AI
 
     Returns:
-        Parsed classification dictionary
+        Parsed classification dictionary or safe default
     """
     try:
         # Remove markdown code fences if present
         text = response_text.strip()
         if text.startswith("```"):
-            text = text.split("```")[1]
+            # Extract content between markdown fences
+            parts = text.split("```")  # Split by triple backticks
+            if len(parts) > 1:
+                text = parts[1]  # Get the content between fences
             if text.startswith("json"):
-                text = text[4:]
+                text = text[4:]  # Remove 'json' language tag
+        
         text = text.strip()
-
+        
+        # Try to parse JSON
         parsed = json.loads(text)
-        return parsed
+        
+        # Validate required fields
+        if "status" in parsed and "rationale" in parsed:
+            return parsed
+        else:
+            logger.warning("Parsed JSON missing required fields")
+            return {
+                "status": "uncertain",
+                "rationale": "Could not parse AI response completely."
+            }
 
-    except (json.JSONDecodeError, ValueError) as e:
+    except (json.JSONDecodeError, ValueError, AttributeError) as e:
         logger.warning(f"Failed to parse classification JSON: {str(e)}")
-        logger.debug(f"Response: {response_text}")
-        # Return default uncertain response
+        logger.debug(f"Raw response: {response_text[:200]}...")
+        # Return safe default
         return {
             "status": "uncertain",
-            "rationale": "Could not retrieve verification sources."
+            "rationale": "Could not parse AI response. Please verify manually."
         }

@@ -317,7 +317,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Handle injection of content analysis highlighting
   if (message.type === 'HIGHLIGHT_FINDINGS') {
+    console.log('[Content Script] Received HIGHLIGHT_FINDINGS message:', message.payload)
     highlightFindings(message.payload)
+    sendResponse({ success: true })
+    return true
+  }
+
+  // Handle highlighting of claims
+  if (message.type === 'HIGHLIGHT_CLAIMS') {
+    console.log('[Content Script] Received HIGHLIGHT_CLAIMS message:', message.payload)
+    highlightClaims(message.payload)
+    sendResponse({ success: true })
+    return true
+  }
+
+  // Handle clearing all highlights
+  if (message.type === 'CLEAR_HIGHLIGHTS') {
+    console.log('[Content Script] Received CLEAR_HIGHLIGHTS message')
+    clearAllHighlights()
+    sendResponse({ success: true })
+    return true
   }
 })
 
@@ -391,8 +410,113 @@ function showAnalysisBadge(result: any) {
 }
 
 /**
- * Highlight suspicious content in the page
- * Marks findings with red underlines
+ * Clear all highlights from the page
+ */
+function clearAllHighlights() {
+  console.debug('[Content Script] Clearing all highlights')
+  const highlights = document.querySelectorAll('mark[data-trust-highlight]')
+  highlights.forEach((mark) => {
+    const parent = mark.parentNode
+    if (parent) {
+      while (mark.firstChild) {
+        parent.insertBefore(mark.firstChild, mark)
+      }
+      parent.removeChild(mark)
+    }
+  })
+}
+
+/**
+ * Highlight claims in the page
+ * Marks claims with blue backgrounds
+ */
+function highlightClaims(claims: string[]) {
+  console.debug('[Content Script] Highlighting claims:', claims.length)
+  console.debug('[Content Script] Claims to highlight:', claims)
+
+  if (!claims || claims.length === 0) {
+    console.warn('[Content Script] No claims provided')
+    return
+  }
+
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    null,
+    false
+  )
+
+  const nodesToReplace: Array<[Node, DocumentFragment]> = []
+  let totalMatches = 0
+
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    let hasMatch = false
+    let fragment = document.createDocumentFragment()
+    let lastIndex = 0
+
+    claims.forEach((claim) => {
+      if (!claim || claim.length < 5) return // Skip very short claims
+      
+      const lowerText = node!.textContent!.toLowerCase()
+      const lowerClaim = claim.toLowerCase()
+      let index = lowerText.indexOf(lowerClaim)
+
+      while (index !== -1) {
+        hasMatch = true
+        totalMatches++
+        // Add text before match
+        if (index > lastIndex) {
+          fragment.appendChild(
+            document.createTextNode(node!.textContent!.substring(lastIndex, index))
+          )
+        }
+
+        // Add highlighted match
+        const highlight = document.createElement('mark')
+        highlight.setAttribute('data-trust-highlight', 'claim')
+        highlight.style.cssText = `
+          background-color: #3b82f6;
+          color: white;
+          text-decoration: none;
+          cursor: pointer;
+          padding: 2px 4px;
+          border-radius: 2px;
+          font-weight: 500;
+        `
+        highlight.textContent = node!.textContent!.substring(
+          index,
+          index + lowerClaim.length
+        )
+        fragment.appendChild(highlight)
+
+        lastIndex = index + lowerClaim.length
+        index = lowerText.indexOf(lowerClaim, lastIndex)
+      }
+    })
+
+    if (hasMatch) {
+      // Add remaining text
+      if (lastIndex < node.textContent!.length) {
+        fragment.appendChild(
+          document.createTextNode(node.textContent!.substring(lastIndex))
+        )
+      }
+      nodesToReplace.push([node, fragment])
+    }
+  }
+
+  // Replace nodes (do this after walking to avoid modifying tree during iteration)
+  nodesToReplace.forEach(([originalNode, fragment]) => {
+    originalNode.parentNode?.replaceChild(fragment, originalNode)
+  })
+  
+  console.debug('[Content Script] Highlighted claims complete. Total matches:', totalMatches)
+}
+
+/**
+ * Highlight findings in the page
+ * Marks findings with yellow backgrounds and red underlines
  */
 function highlightFindings(findings: string[]) {
   console.debug('[Content Script] Highlighting findings:', findings.length)
@@ -413,6 +537,8 @@ function highlightFindings(findings: string[]) {
     let lastIndex = 0
 
     findings.forEach((finding) => {
+      if (!finding || finding.length < 5) return // Skip very short findings
+      
       const lowerText = node.textContent.toLowerCase()
       const lowerFinding = finding.toLowerCase()
       let index = lowerText.indexOf(lowerFinding)
@@ -428,6 +554,7 @@ function highlightFindings(findings: string[]) {
 
         // Add highlighted match
         const highlight = document.createElement('mark')
+        highlight.setAttribute('data-trust-highlight', 'finding')
         highlight.style.cssText = `
           background-color: #fef08a;
           text-decoration: underline wavy #ef4444;

@@ -49,6 +49,7 @@ export interface AnalysisResponse {
   findings: string[]
   sources: Source[]
   report: string
+  fromCache?: boolean
 }
 
 // ===== API Functions =====

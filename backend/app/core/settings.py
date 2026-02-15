@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-1.5-flash"
     backboard_api_key: Optional[str] = None  # Alternative AI provider
-    backboard_model: str = "default"  # Backboard model name
+    backboard_model: str = "claude-3-haiku-20240307"  # Backboard model name
+    backboard_endpoint: str = "https://api.backboard.io"  # Backboard API endpoint
     news_api_key: Optional[str] = None
     newsapi_endpoint: str = "https://newsapi.org/v2/everything"
     newsapi_page_size: int = 5

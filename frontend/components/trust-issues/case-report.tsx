@@ -1,4 +1,6 @@
 import { ClaimDetail } from "@/src/services/api"
+import { useHighlight } from "@/src/hooks/useHighlight"
+import { useState } from "react"
 
 interface CaseReportProps {
   claims: ClaimDetail[]
@@ -15,6 +17,19 @@ export function CaseReport({
   manipulationRisk,
   report,
 }: CaseReportProps) {
+  const { highlightClaims, clearHighlights } = useHighlight()
+  const [highlightActive, setHighlightActive] = useState(false)
+
+  const handleToggleHighlight = async () => {
+    if (highlightActive) {
+      await clearHighlights()
+      setHighlightActive(false)
+    } else {
+      const claimTexts = claims.map(c => c.claim)
+      await highlightClaims(claimTexts)
+      setHighlightActive(true)
+    }
+  }
   const verified = claims.filter((c) => c.status === "verified").length
   const disputed = claims.filter((c) => c.status === "disputed").length
   const uncertain = claims.filter((c) => c.status === "uncertain").length
@@ -82,9 +97,22 @@ export function CaseReport({
       {/* Claim Breakdown */}
       {total > 0 && (
         <div className="rounded-sm border border-border bg-card p-3">
-          <h4 className="text-[10px] uppercase tracking-[0.1em] font-semibold text-foreground mb-2">
-            Claim Verification Summary
-          </h4>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-[10px] uppercase tracking-[0.1em] font-semibold text-foreground">
+              Claim Verification Summary
+            </h4>
+            <button
+              onClick={handleToggleHighlight}
+              className={`text-[8px] uppercase tracking-widest px-2 py-1 rounded transition-colors ${
+                highlightActive
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+              }`}
+              title="Highlight claims in the webpage"
+            >
+              {highlightActive ? '✓ Highlighting' : '🔍 Highlight'}
+            </button>
+          </div>
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="text-center">
               <div className="text-sm font-bold text-green-500">{verified}</div>
