@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Extension Flow Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+        }
+        button {
+            background: #333;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 10px 20px;
+            margin: 10px;
+            cursor: pointer;
+        }
+        button:hover { background: #00ff00; color: #000; }
+        .log { 
+            background: #000;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #333;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success { color: #00ff00; }
+        .error { color: #ff0000; }
+        .warning { color: #ffaa00; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Extension Message Flow Test</h1>
+    
+    <div>
+        <button onclick="testBackendDirect()">1. Test Backend Directly</button>
+        <button onclick="testContentScript()">2. Test Content Script</button>
+        <button onclick="testServiceWorker()">3. Test Service Worker</button>
+        <button onclick="testFullFlow()">4. Test Full Flow</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div id="log" class="log"></div>
+
+    <script>
+        const log = (msg, type = 'info') => {
+            const div = document.getElementById('log');
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            div.innerHTML += `<div class="${className}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            div.scrollTop = div.scrollHeight;
+        };
+
+        const clearLog = () => {
+            document.getElementById('log').innerHTML = '';
+        };
+
+        // Test 1: Direct backend call
+        async function testBackendDirect() {
+            log('=== Testing Backend Direct ===', 'info');
+            log('Calling http://127.0.0.1:8000/api/analyze...', 'info');
+            
+            try {
+                const response = await fetch('http://127.0.0.1:8000/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: 'https://example.com/test',
+                        content: 'The Eiffel Tower is 330 meters tall and located in Paris, France. It was built in 1889 and is one of the most visited monuments in the world.',
+                        title: 'Test Article'
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log('✓ Backend responded successfully!', 'success');
+                    log('Response: ' + JSON.stringify(data, null, 2), 'success');
+                    
+                    // Validate response fields
+                    const required = ['aiGenerationLikelihood', 'credibilityScore', 'manipulationRisk', 'findings', 'sources', 'report'];
+                    const missing = required.filter(f => !(f in data));
+                    
+                    if (missing.length === 0) {
+                        log('✓ All required fields present', 'success');
+                    } else {
+                        log('✗ Missing fields: ' + missing.join(', '), 'error');
+                    }
+                } else {
+                    log('✗ Backend returned error: ' + response.status, 'error');
+                    const text = await response.text();
+                    log('Error: ' + text, 'error');
+                }
+            } catch (error) {
+                log('✗ Request failed: ' + error.message, 'error');
+            }
+        }
+
+        // Test 2: Content script messaging
+        async function testContentScript() {
+            log('=== Testing Content Script ===', 'info');
+            
+            try {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                log('Current tab: ' + tab.url, 'info');
+                
+                log('Sending REQUEST_PAGE_CONTENT to content script...', 'info');
+                const response = await chrome.tabs.sendMessage(tab.id, {
+                    type: 'REQUEST_PAGE_CONTENT'
+                });
+                
+                if (response && response.content) {
+                    log('✓ Content script responded!', 'success');
+                    log('URL: ' + response.url, 'success');
+                    log('Title: ' + response.title, 'success');
+                    log('Content length: ' + response.content.length + ' chars', 'success');
+                    log('Images: ' + (response.images?.length || 0), 'success');
+                } else {
+                    log('✗ Invalid response from content script', 'error');
+                    log('Response: ' + JSON.stringify(response), 'error');
+                }
+            } catch (error) {
+                log('✗ Content script error: ' + error.message, 'error');
+                log('Make sure you\'re on a webpage (not chrome:// page)', 'warning');
+            }
+        }
+
+        // Test 3: Service worker messaging
+        async function testServiceWorker() {
+            log('=== Testing Service Worker ===', 'info');
+            
+            try {
+                log('Checking backend health via service worker...', 'info');
+                
+                const healthResponse = await new Promise((resolve) => {
+                    chrome.runtime.sendMessage({ type: 'CHECK_BACKEND_HEALTH' }, resolve);
+                });
+                
+                if (healthResponse && healthResponse.healthy) {
+                    log('✓ Service worker says backend is healthy', 'success');
+                } else {
+                    log('✗ Service worker says backend is unhealthy', 'error');
+                }
+                
+                log('Checking cache...', 'info');
+                const cacheResponse = await new Promise((resolve) => {
+                    chrome.runtime.sendMessage({
+                        type: 'GET_CACHED_ANALYSIS',
+                        payload: { url: window.location.href }
+                    }, resolve);
+                });
+                
+                if (cacheResponse && cacheResponse.found) {
+                    log('✓ Found cached analysis', 'success');
+                } else {
+                    log('○ No cached analysis (this is normal)', 'info');
+                }
+                
+            } catch (error) {
+                log('✗ Service worker error: ' + error.message, 'error');
+            }
+        }
+
+        // Test 4: Full flow
+        async function testFullFlow() {
+            log('=== Testing Full Flow ===', 'info');
+            
+            try {
+                // Step 1: Get page content
+                log('[1/4] Getting page content...', 'info');
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                const pageContent = await chrome.tabs.sendMessage(tab.id, {
+                    type: 'REQUEST_PAGE_CONTENT'
+                });
+                
+                if (!pageContent || !pageContent.content) {
+                    log('✗ Failed to get page content', 'error');
+                    return;
+                }
+                log('✓ Got page content (' + pageContent.content.length + ' chars)', 'success');
+                
+                // Step 2: Send to service worker
+                log('[2/4] Sending to service worker...', 'info');
+                
+                // Listen for progress messages
+                const progressListener = (message) => {
+                    if (message.type === 'ANALYSIS_PROGRESS') {
+                        log('Progress: ' + message.payload.status + ' (' + message.payload.progress + '%)', 'info');
+                    } else if (message.type === 'ANALYSIS_COMPLETE') {
+                        log('✓ Analysis complete!', 'success');
+                        log('Result: ' + JSON.stringify(message.payload.result, null, 2), 'success');
+                        chrome.runtime.onMessage.removeListener(progressListener);
+                    } else if (message.type === 'ANALYSIS_ERROR') {
+                        log('✗ Analysis error: ' + message.payload.error, 'error');
+                        chrome.runtime.onMessage.removeListener(progressListener);
+                    }
+                };
+                
+                chrome.runtime.onMessage.addListener(progressListener);
+                
+                // Send analysis request
+                const result = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({
+                        type: 'ANALYZE_PAGE',
+                        payload: pageContent
+                    }, (response) => {
+                        if (response && response.status === 'error') {
+                            reject(new Error(response.error));
+                        } else {
+                            resolve(response);
+                        }
+                    });
+                });
+                
+                log('[3/4] Service worker response received', 'success');
+                log('Status: ' + result.status, 'success');
+                
+                // Wait a moment for ANALYSIS_COMPLETE message
+                log('[4/4] Waiting for analysis to complete...', 'info');
+                log('Check logs above for progress updates', 'info');
+                
+            } catch (error) {
+                log('✗ Full flow error: ' + error.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

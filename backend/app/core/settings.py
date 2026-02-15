@@ -38,6 +38,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False  # Allow GEMINI_API_KEY and gemini_api_key
+        extra = "ignore"  # Ignore extra fields in .env file
 
 
 @lru_cache()

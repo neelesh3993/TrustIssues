@@ -1,8 +1,23 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
-requests==2.31.0
-google-generativeai==0.3.0
-pytest==7.4.0
+# Trust Issues Backend Dependencies
+# Compatible with Python 3.10+
+
+# FastAPI and server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Pydantic (using newer version with Python 3.14 support)
+pydantic>=2.6.0
+pydantic-settings>=2.1.0
+
+# Environment and config
+python-dotenv>=1.0.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Google Gemini AI (currently using deprecated package - works fine, just shows warning)
+google-generativeai>=0.3.2
+
+# Testing (optional)
+pytest>=7.4.3
+httpx>=0.26.0

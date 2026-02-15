@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trust Issues - Backend Test</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0d0d0d;
+            color: #00ff00;
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #00ff00;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+        .test-section {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+        .test-title {
+            color: #ffff00;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .success {
+            color: #00ff00;
+        }
+        .error {
+            color: #ff0000;
+        }
+        .warning {
+            color: #ffaa00;
+        }
+        button {
+            background: #333;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            margin: 5px;
+        }
+        button:hover {
+            background: #00ff00;
+            color: #000;
+        }
+        pre {
+            background: #000;
+            padding: 10px;
+            overflow-x: auto;
+            border-radius: 3px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-ok { background: #00ff00; }
+        .status-error { background: #ff0000; }
+        .status-waiting { background: #ffaa00; }
+    </style>
+</head>
+<body>
+    <h1>🛡️ Trust Issues - Backend Diagnostic Tool</h1>
+    
+    <div class="test-section">
+        <div class="test-title">🔧 Quick Tests</div>
+        <button onclick="testAll()">Run All Tests</button>
+        <button onclick="testBackendHealth()">Test Backend Health</button>
+        <button onclick="testAnalyzeEndpoint()">Test Analysis API</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        const BACKEND_URL = 'http://localhost:8000';
+        const resultsDiv = document.getElementById('results');
+
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = 'test-section';
+            
+            const statusClass = type === 'success' ? 'status-ok' : 
+                               type === 'error' ? 'status-error' : 'status-waiting';
+            
+            div.innerHTML = `
+                <span class="status-indicator ${statusClass}"></span>
+                <span class="${type}">${message}</span>
+            `;
+            resultsDiv.appendChild(div);
+            div.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function logJson(title, data) {
+            const div = document.createElement('div');
+            div.className = 'test-section';
+            div.innerHTML = `
+                <div class="test-title">${title}</div>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+            resultsDiv.appendChild(div);
+        }
+
+        function clearResults() {
+            resultsDiv.innerHTML = '';
+        }
+
+        async function testBackendHealth() {
+            log('Testing backend health...', 'info');
+            
+            try {
+                const response = await fetch(`${BACKEND_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log('✓ Backend is healthy!', 'success');
+                    logJson('Health Response', data);
+                } else {
+                    log(`✗ Backend returned status ${response.status}`, 'error');
+                    const text = await response.text();
+                    log(`Response: ${text}`, 'error');
+                }
+            } catch (error) {
+                log('✗ Cannot connect to backend!', 'error');
+                log(`Error: ${error.message}`, 'error');
+                log('Make sure backend is running: python -m uvicorn app.main:app --reload', 'warning');
+            }
+        }
+
+        async function testAnalyzeEndpoint() {
+            log('Testing /api/analyze endpoint...', 'info');
+            
+            const testRequest = {
+                url: 'https://example.com/test',
+                content: 'The Eiffel Tower is located in Paris, France. It was completed in 1889 and stands 330 meters tall. The tower receives millions of visitors each year.',
+                title: 'Test Article'
+            };
+
+            log('Sending test analysis request...', 'info');
+            logJson('Request Payload', testRequest);
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/analyze`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify(testRequest)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log('✓ Analysis endpoint working!', 'success');
+                    logJson('Analysis Response', data);
+                    
+                    // Validate response structure
+                    const requiredFields = ['aiGenerationLikelihood', 'credibilityScore', 'manipulationRisk', 'findings', 'sources', 'report'];
+                    const missingFields = requiredFields.filter(field => !(field in data));
+                    
+                    if (missingFields.length === 0) {
+                        log('✓ Response has all required fields', 'success');
+                    } else {
+                        log(`⚠ Missing fields: ${missingFields.join(', ')}`, 'warning');
+                    }
+                } else {
+                    log(`✗ Analysis failed with status ${response.status}`, 'error');
+                    const text = await response.text();
+                    log(`Response: ${text}`, 'error');
+                }
+            } catch (error) {
+                log('✗ Analysis request failed!', 'error');
+                log(`Error: ${error.message}`, 'error');
+                
+                if (error.message.includes('Failed to fetch')) {
+                    log('This usually means:', 'warning');
+                    log('1. Backend is not running', 'warning');
+                    log('2. CORS is blocking the request', 'warning');
+                    log('3. Backend is on a different port', 'warning');
+                }
+            }
+        }
+
+        async function testCORS() {
+            log('Testing CORS configuration...', 'info');
+            
+            try {
+                const response = await fetch(`${BACKEND_URL}/`, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Origin': window.location.origin,
+                        'Access-Control-Request-Method': 'POST',
+                    }
+                });
+
+                const corsHeaders = {
+                    'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
+                    'access-control-allow-methods': response.headers.get('access-control-allow-methods'),
+                    'access-control-allow-headers': response.headers.get('access-control-allow-headers'),
+                };
+
+                log('✓ CORS headers present', 'success');
+                logJson('CORS Headers', corsHeaders);
+            } catch (error) {
+                log('✗ CORS test failed', 'error');
+                log(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testBackendRoot() {
+            log('Testing backend root endpoint...', 'info');
+            
+            try {
+                const response = await fetch(`${BACKEND_URL}/`);
+                const data = await response.json();
+                log('✓ Backend root accessible', 'success');
+                logJson('Root Response', data);
+            } catch (error) {
+                log('✗ Cannot reach backend root', 'error');
+                log(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testBackendDocs() {
+            log('Testing API documentation...', 'info');
+            
+            try {
+                const response = await fetch(`${BACKEND_URL}/docs`);
+                if (response.ok) {
+                    log('✓ API docs available at: http://localhost:8000/docs', 'success');
+                } else {
+                    log('⚠ API docs not available', 'warning');
+                }
+            } catch (error) {
+                log('✗ Cannot reach API docs', 'error');
+            }
+        }
+
+        async function testAll() {
+            clearResults();
+            log('=== Starting Full Backend Test ===', 'info');
+            log('', 'info');
+            
+            await testBackendRoot();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await testBackendHealth();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await testCORS();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await testAnalyzeEndpoint();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await testBackendDocs();
+            
+            log('', 'info');
+            log('=== Test Complete ===', 'success');
+        }
+
+        // Auto-run tests on load
+        window.addEventListener('load', () => {
+            setTimeout(testAll, 500);
+        });
+    </script>
+</body>
+</html>

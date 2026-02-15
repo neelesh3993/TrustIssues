@@ -3,7 +3,7 @@
  * Manages analysis state and communication with background service worker
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { AnalysisResponse } from '../services/api'
 
 type AnalysisStatus = 'idle' | 'analyzing' | 'done' | 'error'
@@ -21,8 +21,6 @@ export function useAnalysis(): UseAnalysisReturn {
   const [status, setStatus] = useState<AnalysisStatus>('idle')
   const [data, setData] = useState<AnalysisResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const isWaitingRef = useRef(false)
 
   // Add global message listener to catch ALL messages
   useEffect(() => {
@@ -80,15 +78,18 @@ export function useAnalysis(): UseAnalysisReturn {
       } catch (sendErr: any) {
         console.warn('⚠ [Popup] Content script not responding, attempting injection...')
         
+        // If the content script isn't present, try injecting it then retry
         const msg = String(sendErr?.message || sendErr)
         if (msg.includes('Receiving end does not exist') || msg.includes('Could not establish connection')) {
           try {
+            // Inject content script into the page (MV3)
             if (chrome.scripting && chrome.scripting.executeScript) {
               console.log('💉 [Popup] Injecting content script...')
               await chrome.scripting.executeScript({
                 target: { tabId: tab.id },
                 files: ['src/content.js'],
               })
+              // Retry sendMessage
               pageContent = await chrome.tabs.sendMessage(tab.id, {
                 type: 'REQUEST_PAGE_CONTENT',
               })
@@ -125,56 +126,37 @@ export function useAnalysis(): UseAnalysisReturn {
       console.log('   Content length:', pageContent.content.length)
       console.log('   Title:', pageContent.title)
 
-      // Set up timeout BEFORE sending message
-      console.log('⏳ [Popup] Waiting for response (with 30s timeout)...')
-      isWaitingRef.current = true
-      
-      timeoutRef.current = setTimeout(() => {
-        if (isWaitingRef.current) {
-          console.error('⏰ [Popup] Timeout: No response after 30 seconds')
-          setError('Analysis timeout. Service worker did not respond.')
-          setStatus('error')
-          isWaitingRef.current = false
-        }
-      }, 30000)
-
-      // Send message with callback
       chrome.runtime.sendMessage({
         type: 'ANALYZE_PAGE',
         payload: pageContent,
       }, (response: any) => {
-        console.log('📥 [Popup] Service worker responded via callback:', response)
-        
-        // Clear timeout since we got a response
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current)
-          timeoutRef.current = null
-        }
-        isWaitingRef.current = false
+        console.log('📥 [Popup] Service worker responded:', response)
         
         if (chrome.runtime.lastError) {
           console.error('❌ [Popup] Runtime error:', chrome.runtime.lastError)
           setError(chrome.runtime.lastError.message || 'Failed to communicate with service worker')
           setStatus('error')
-          return
         }
         
-        if (response) {
-          if (response.type === 'ANALYSIS_COMPLETE') {
-            console.log('✅ [Popup] Analysis complete, setting data')
-            setData(response.payload.result)
-            setStatus('done')
-          } else if (response.type === 'ANALYSIS_ERROR') {
-            console.error('❌ [Popup] Analysis error:', response.payload.error)
-            setError(response.payload.error)
-            setStatus('error')
-          }
-        } else {
-          console.error('❌ [Popup] Empty response from service worker')
-          setError('Service worker returned no response')
+        if (response && response.status === 'error') {
+          console.error('❌ [Popup] Service worker returned error:', response.error)
+          setError(response.error)
           setStatus('error')
         }
       })
+
+      // Note: The actual result will come via the message listener above
+      // This is handled by the global listener we set up in useEffect
+      console.log('⏳ [Popup] Waiting for ANALYSIS_COMPLETE message from service worker...')
+
+      // Set a timeout to catch if we never receive a response
+      setTimeout(() => {
+        if (status === 'analyzing') {
+          console.error('⏰ [Popup] Timeout: No response from service worker after 45 seconds')
+          setError('Analysis timeout. The service worker did not respond. Try refreshing the page.')
+          setStatus('error')
+        }
+      }, 45000)
 
     } catch (err: any) {
       console.error('❌ [Popup] Analysis failed:', err)
@@ -184,22 +166,24 @@ export function useAnalysis(): UseAnalysisReturn {
   }, [status])
 
   const cancel = useCallback(() => {
-    console.log('🛑 [Popup] Cancelling...')
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-      timeoutRef.current = null
-    }
-    isWaitingRef.current = false
+    console.log('🛑 [Popup] Cancelling analysis...')
     ;(async () => {
       try {
-        if (typeof chrome !== 'undefined' && chrome.tabs) {
-          const [tab] = (await chrome.tabs.query({ active: true, currentWindow: true })) as any[]
-          chrome.runtime.sendMessage({
-            type: 'CANCEL_ANALYSIS',
-            payload: { tabId: tab?.id },
-          })
+        if (typeof chrome === 'undefined' || !chrome.tabs || !chrome.tabs.query) {
+          setStatus('idle')
+          setError(null)
+          return
         }
-      } catch {} finally {
+
+        const [tab] = (await chrome.tabs.query({ active: true, currentWindow: true })) as any[]
+        const tabId = tab?.id
+        chrome.runtime.sendMessage({
+          type: 'CANCEL_ANALYSIS',
+          payload: { tabId },
+        })
+      } catch {
+        // Ignore cancellation errors
+      } finally {
         setStatus('idle')
         setError(null)
       }
@@ -207,7 +191,7 @@ export function useAnalysis(): UseAnalysisReturn {
   }, [])
 
   const reset = useCallback(() => {
-    console.log('🔄 [Popup] Resetting...')
+    console.log('🔄 [Popup] Resetting analysis state...')
     setStatus('idle')
     setData(null)
     setError(null)

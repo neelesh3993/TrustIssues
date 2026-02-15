@@ -22,6 +22,9 @@ import { analyzePageContent, checkBackendHealth } from '../services/api'
 // Track active analysis requests for cancellation support
 const activeRequests = new Map<number, AbortController>()
 
+// Track the popup's sender info so we can send responses back
+const popupSenders = new Map<number, chrome.runtime.MessageSender>()
+
 // Backend health status
 let backendHealthy = false
 let lastHealthCheckTime = 0
@@ -37,6 +40,7 @@ const HEALTH_CHECK_INTERVAL = 60000 // Check every minute
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.debug('[Service Worker] Received message:', message.type)
+  console.debug('[Service Worker] Message from:', sender.tab?.url || sender.url || 'unknown')
 
   if (message.type === 'ANALYZE_PAGE') {
     handleAnalyzeRequest(message, sender, sendResponse)
@@ -98,6 +102,10 @@ async function handleAnalyzeRequest(
   // Create abort controller for cancellation support
   const controller = new AbortController()
   activeRequests.set(tabId, controller)
+
+  // Store sender info for sending responses back
+  const senderTabId = sender.tab?.id ?? -1 // -1 for popup (non-tab sender)
+  popupSenders.set(senderTabId, sender)
 
   try {
     console.log(`[Service Worker] Starting analysis for ${url}`)
@@ -162,13 +170,12 @@ async function handleAnalyzeRequest(
 
     console.log('[Service Worker] Analysis complete')
 
-    // Notify popup of completion
-    notifyPopup({
+    // Notify popup of completion via sendResponse (direct callback)
+    console.log('[Service Worker] Sending ANALYSIS_COMPLETE via sendResponse')
+    sendResponse({
       type: 'ANALYSIS_COMPLETE',
       payload: { result, cached: false },
     })
-
-    sendResponse({ status: 'complete' })
   } catch (error: any) {
     console.error('[Service Worker] Analysis error:', error)
 
@@ -195,16 +202,16 @@ async function handleAnalyzeRequest(
 
     console.error('[Service Worker] Error message for user:', errorMessage)
 
-    // Notify popup and content script of error
-    notifyPopup({
+    // Notify popup of error via sendResponse (direct callback)
+    console.log('[Service Worker] Sending ANALYSIS_ERROR via sendResponse')
+    sendResponse({
       type: 'ANALYSIS_ERROR',
       payload: { error: errorMessage, url },
     })
-
-    sendResponse({ status: 'error', error: errorMessage })
   } finally {
     // Always clean up the abort controller
     activeRequests.delete(tabId)
+    popupSenders.delete(senderTabId)
   }
 }
 
