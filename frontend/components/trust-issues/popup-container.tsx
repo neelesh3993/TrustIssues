@@ -1,26 +1,56 @@
 "use client"
 
-import { useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useAnalysis } from "@/src/hooks/useAnalysis"
 import { ScanButton } from "./scan-button"
 import { LoadingState } from "./loading-state"
 import { ScoreBar } from "./score-bar"
-import { CaseReport } from "./case-report"
 import { SourceList } from "./source-list"
 import { FindingsList } from "./findings-list"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, Clock } from "lucide-react"
+
+const COOLDOWN_SECONDS = 10 // 10 second cooldown between scans
 
 export function PopupContainer() {
   const { status, data, error, analyze, reset } = useAnalysis()
+  const [cooldownRemaining, setCooldownRemaining] = useState(0)
+  const [lastScanTime, setLastScanTime] = useState<number | null>(null)
+
+  // Cooldown timer
+  useEffect(() => {
+    if (cooldownRemaining > 0) {
+      const timer = setTimeout(() => {
+        setCooldownRemaining(cooldownRemaining - 1)
+      }, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [cooldownRemaining])
 
   const handleScan = async () => {
+    // Check cooldown
+    if (cooldownRemaining > 0) {
+      console.warn(`⏱️ Cooldown active: ${cooldownRemaining}s remaining`)
+      return
+    }
+
+    setLastScanTime(Date.now())
+    setCooldownRemaining(COOLDOWN_SECONDS)
     await analyze()
   }
 
   const handleReset = () => {
+    // Check cooldown
+    if (cooldownRemaining > 0) {
+      console.warn(`⏱️ Cooldown active: ${cooldownRemaining}s remaining`)
+      return
+    }
+
     reset()
   }
+
+  // Disable scan button during cooldown or analyzing
+  const isScanDisabled = status === "analyzing" || cooldownRemaining > 0
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-[360px] flex-col bg-background">
@@ -37,6 +67,16 @@ export function PopupContainer() {
 
       {/* Main Content */}
       <main className="flex flex-1 flex-col gap-5 px-4 py-3">
+        {/* Cooldown Warning */}
+        {cooldownRemaining > 0 && status !== "analyzing" && (
+          <Alert className="bg-yellow-500/10 border-yellow-500/50">
+            <Clock className="h-4 w-4 text-yellow-500" />
+            <AlertDescription className="text-yellow-500">
+              Cooldown active: Wait {cooldownRemaining}s to prevent API quota issues
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Error Alert */}
         {error && (
           <Alert variant="destructive">
@@ -46,7 +86,12 @@ export function PopupContainer() {
         )}
 
         {/* Scan Button / Loading */}
-        {status === "idle" && <ScanButton onClick={handleScan} />}
+        {status === "idle" && (
+          <ScanButton 
+            onClick={handleScan} 
+            disabled={isScanDisabled}
+          />
+        )}
         {status === "analyzing" && <LoadingState />}
 
         {/* Results */}
@@ -72,13 +117,16 @@ export function PopupContainer() {
             </div>
 
             {/* Case Report */}
-            <CaseReport
-              claims={data.claimBreakdown || []}
-              credibilityScore={data.credibilityScore}
-              aiGenerationLikelihood={data.aiGenerationLikelihood}
-              manipulationRisk={data.manipulationRisk}
-              report={data.report}
-            />
+            <div className="flex flex-col gap-2">
+              <h3 className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+                Case Report
+              </h3>
+              <div className="rounded-sm border border-border bg-muted/50 p-3">
+                <p className="text-[11px] leading-relaxed text-secondary-foreground">
+                  {data.report}
+                </p>
+              </div>
+            </div>
 
             {/* Sources */}
             <SourceList sources={data.sources} />
@@ -89,9 +137,16 @@ export function PopupContainer() {
             {/* Rescan */}
             <button
               onClick={handleReset}
-              className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"
+              disabled={cooldownRemaining > 0}
+              className={`text-[10px] uppercase tracking-[0.2em] transition-colors ${
+                cooldownRemaining > 0
+                  ? "text-muted-foreground/30 cursor-not-allowed"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              {"[ Run New Scan ]"}
+              {cooldownRemaining > 0 
+                ? `[ Wait ${cooldownRemaining}s to Scan Again ]`
+                : "[ Run New Scan ]"}
             </button>
           </div>
         )}
@@ -101,7 +156,7 @@ export function PopupContainer() {
       <footer className="px-4 pb-4 pt-3">
         <div className="h-px w-full bg-border" />
         <p className="mt-3 text-center text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60">
-          {"Trust Issues \u2014 Siren\u2019s Call Track"}
+          {"Trust Issues — Siren's Call Track"}
         </p>
       </footer>
     </div>
